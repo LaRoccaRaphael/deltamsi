@@ -1,0 +1,19 @@
+[project]
+name = "msix"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Raphael La Rocca",email = "raphaellarocca0594@gmail.com"}
+    {name = "Lionel La Rocca",email = "lionel.larocca@proton.me"}
+]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+]
+
+[tool.poetry]
+packages = [{include = "msix", from = "src"}]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
