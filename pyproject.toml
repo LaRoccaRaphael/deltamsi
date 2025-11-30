@@ -3,7 +3,7 @@ name = "msix"
 version = "0.1.0"
 description = ""
 authors = [
-    {name = "Raphael La Rocca",email = "raphaellarocca0594@gmail.com"}
+    {name = "Raphael La Rocca",email = "raphaellarocca0594@gmail.com"},
     {name = "Lionel La Rocca",email = "lionel.larocca@proton.me"}
 ]
 readme = "README.md"
