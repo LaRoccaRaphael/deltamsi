@@ -1,0 +1,38 @@
+# .pre-commit-config.yaml
+
+repos:
+  # 1. Formatage (Black)
+  - repo: https://github.com/psf/black
+    rev: 24.4.2 # Utilisez la version actuelle stable
+    hooks:
+      - id: black
+        # Applique le formatage uniquement aux fichiers Python
+        files: '\.py$'
+
+  # 2. Linting et Correction (Ruff)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.5 # Utilisez la version actuelle stable
+    hooks:
+      # Ruff sert à la fois de linter rapide (remplace Pylint/Flake8) et de formatter
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format # Le formatter intégré de Ruff (plus rapide que Black)
+        files: '\.py$'
+
+  # 3. Vérification des Types (Mypy)
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.0 # Utilisez la version actuelle stable
+    hooks:
+      - id: mypy
+        # Utilisez l'option --strict pour une vérification rigoureuse
+        args: [--strict]
+        # Vous devrez créer un fichier mypy.ini pour configurer les chemins
+
+  # 4. Nettoyage de base (suppression des espaces inutiles)
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace # Supprime les espaces en fin de ligne
+      - id: end-of-file-fixer   # Assure qu'il y a une ligne vide en fin de fichier
+      - id: check-yaml          # Vérifie la syntaxe de votre YAML
+      - id: debug-statements    # Empêche de commiter des print() ou pdb.set_trace()

@@ -1,1 +1,82 @@
-.venv
+# ----------------------------------------------------------------------
+# 1. ENVIRONMENT MANAGEMENT (Conda, Virtualenv, Poetry)
+# ----------------------------------------------------------------------
+# Virtual environments created by Poetry/pip/virtualenv
+.venv/
+env/
+venv/
+.env
+
+# Conda environment cache/files
+.conda/
+.mamba/
+.mamba_jlab_cache/
+environment.lock # Conda lock files
+
+# Python interpreter history
+.python_history
+
+# ----------------------------------------------------------------------
+# 2. PYTHON CACHES & ARTIFACTS
+# ----------------------------------------------------------------------
+# Compiled byte-code (.pyc)
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# ----------------------------------------------------------------------
+# 3. DEVELOPMENT & QA TOOLS
+# ----------------------------------------------------------------------
+# Test coverage artifacts
+.pytest_cache/
+.coverage
+
+# Mypy cache
+.mypy_cache/
+
+# Ruff cache
+.ruff_cache/
+
+# Pre-commit cache
+.pre-commit-cache/
+
+# Jupyter/iPython notebook checkpoints
+.ipynb_checkpoints
+
+# ----------------------------------------------------------------------
+# 4. DATA SCIENCE / MSI DATA (Large Files)
+# ----------------------------------------------------------------------
+# Raw MSI data files (NEVER VERSION CONTROL RAW DATA)
+# Your raw data files (imzML and its paired binary file .ibd)
+*.imzML
+*.ibd
+*.raw
+*.mzml
+data/
+input/
+
+# Processed output files (AnnData, Zarr, large CSVs)
+# Processed data should ideally be tracked with DVC (Data Version Control)
+*.h5ad
+*.zarr/
+*.csv
+*.tsv
+
+# ----------------------------------------------------------------------
+# 5. OS and Editor Files
+# ----------------------------------------------------------------------
+# macOS
+.DS_Store
+
+# Visual Studio Code
+.vscode/
+
+# Emacs/Vim temporary files
+*~
+#*#
