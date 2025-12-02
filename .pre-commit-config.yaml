@@ -27,6 +27,9 @@ repos:
         # Utilisez l'option --strict pour une vérification rigoureuse
         args: [--strict]
         # Vous devrez créer un fichier mypy.ini pour configurer les chemins
+        additional_dependencies:
+          - pytest
+          - pytest-mock
 
   # 4. Nettoyage de base (suppression des espaces inutiles)
   - repo: https://github.com/pre-commit/pre-commit-hooks

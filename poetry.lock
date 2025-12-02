@@ -3905,6 +3905,25 @@ pytest = ">=7"
 testing = ["process-tests", "pytest-xdist", "virtualenv"]
 
 [[package]]
+name = "pytest-mock"
+version = "3.15.1"
+description = "Thin-wrapper around the mock package for easier use with pytest"
+optional = true
+python-versions = ">=3.9"
+groups = ["main"]
+markers = "extra == \"dev\""
+files = [
+    {file = "pytest_mock-3.15.1-py3-none-any.whl", hash = "sha256:0a25e2eb88fe5168d535041d09a4529a188176ae608a6d249ee65abc0949630d"},
+    {file = "pytest_mock-3.15.1.tar.gz", hash = "sha256:1849a238f6f396da19762269de72cb1814ab44416fa73a8686deac10b0d87a0f"},
+]
+
+[package.dependencies]
+pytest = ">=6.2.5"
+
+[package.extras]
+dev = ["pre-commit", "pytest-asyncio", "tox"]
+
+[[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
 description = "Extensions to the standard Python datetime module"
@@ -5528,10 +5547,10 @@ files = [
 cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and python_version < \"3.14\"", "cffi (>=2.0.0b) ; platform_python_implementation != \"PyPy\" and python_version >= \"3.14\""]
 
 [extras]
-dev = ["black", "mypy", "pandas-stubs", "pre-commit", "pytest", "pytest-cov", "ruff"]
+dev = ["black", "mypy", "pandas-stubs", "pre-commit", "pytest", "pytest-cov", "pytest-mock", "ruff"]
 viz = ["fastparquet", "ipykernel", "ipywidgets", "jupyterlab", "matplotlib", "pyarrow", "scanpy", "seaborn", "shapely", "tifffile"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.13"
-content-hash = "984b4e409d77bfd39693b4cc846c867ed4fc1dd57168577d43e27d7c76704f10"
+content-hash = "acb9ba98a89ab6379ac3a24fdfee46ed4129d62e4f16901c21b4c3c58d42e778"
