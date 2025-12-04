@@ -3,10 +3,12 @@
 import os
 import re
 import anndata as ad
-from typing import Dict, Literal, Optional, Any
+import numpy as np
+from typing import Dict, Literal, Optional, Any, List
 
 from .processing.mean_spectrum import compute_mean_spectrum
-from .params.options import MeanSpectrumOptions
+from .processing.combine_mean_spectra import combine_mean_spectra, Spectrum
+from .params.options import MeanSpectrumOptions, GlobalMeanSpectrumOptions
 
 
 class MSICube:
@@ -117,3 +119,69 @@ class MSICube:
         self.adata.uns["mean_spectra_options"] = options.__dict__
         self.adata.uns["mean_spectra_samples"] = list(self.org_imzml_path_dict.keys())
         print("Mean spectra calculated and stored.")
+
+    def compute_global_mean_spectrum(self, **kwargs: Any) -> None:
+        """
+        Computes a single global mean spectrum by combining all individual mean spectra
+        stored in adata.uns["mean_spectra"].
+        """
+        if self.adata is None or "mean_spectra" not in self.adata.uns:
+            print(
+                "ERROR: Individual mean spectra not calculated yet. Run compute_all_mean_spectra first."
+            )
+            return
+
+        print("Computing global mean spectrum...")
+
+        # 1. Options Object Creation and Validation
+        options_kwargs = {
+            "binning_p": kwargs.pop("binning_p", 0.0001),
+            "use_intersection": kwargs.pop("use_intersection", True),
+            "tic_normalize": kwargs.pop("tic_normalize", True),
+            "compress_axis": kwargs.pop("compress_axis", False),
+        }
+
+        if kwargs:
+            print(
+                f"WARNING: Ignoring unknown arguments passed to global mean spectra computation: {list(kwargs.keys())}"
+            )
+
+        try:
+            options = GlobalMeanSpectrumOptions(**options_kwargs)
+            options.validate()
+        except ValueError as e:
+            raise ValueError(
+                f"Invalid Global Mean Spectrum Options provided: {e}"
+            ) from e
+
+        # 2. Build the list of spectra from adata.uns
+        mean_spectra_data: Dict[str, Dict[str, np.ndarray]] = self.adata.uns[
+            "mean_spectra"
+        ]
+
+        list_of_spectra: List[Spectrum] = [
+            (data["mz"], data["intensity"]) for data in mean_spectra_data.values()
+        ]
+
+        # 3. Call combine_mean_spectra
+        try:
+            mzs_combined, ints_combined = combine_mean_spectra(
+                list_of_spectra,
+                binning_p=options.binning_p,
+                use_intersection=options.use_intersection,
+                tic_normalize=options.tic_normalize,
+                compress_axis=options.compress_axis,
+            )
+        except Exception as e:
+            print(f"Error during global spectrum combination: {e}")
+            return
+
+        # 4. Store the global mean spectrum in adata.uns
+        self.adata.uns["mean_spectrum_global"] = {
+            "mz": mzs_combined,
+            "intensity": ints_combined,
+        }
+        self.adata.uns["mean_spectrum_global_options"] = options.__dict__
+        print(
+            "Global mean spectrum calculated and stored in adata.uns['mean_spectrum_global']."
+        )

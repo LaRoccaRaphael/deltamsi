@@ -1,6 +1,7 @@
 from .options import (
     BinningParams,
     MeanSpectrumOptions,
+    GlobalMeanSpectrumOptions,
     CentroidingParams,
     PeakPickParams,
     AxisPolicy,
@@ -15,6 +16,7 @@ from .options import (
 __all__ = [
     "BinningParams",
     "MeanSpectrumOptions",
+    "GlobalMeanSpectrumOptions",
     "CentroidingParams",
     "PeakPickParams",
     "AxisPolicy",

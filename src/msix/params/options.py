@@ -28,6 +28,7 @@ from typing import Any, Literal, Optional
 __all__ = [
     "BinningParams",
     "MeanSpectrumOptions",
+    "GlobalMeanSpectrumOptions",
     "CentroidingParams",
     "PeakPickParams",
     "AxisPolicy",
@@ -62,9 +63,9 @@ class MeanSpectrumOptions:
     """
 
     mode: Literal["profile", "centroid"]
-    min_mz: float
-    max_mz: float
-    binning_p: float
+    min_mz: float = 0.0
+    max_mz: float = 2000.0
+    binning_p: float = 0.0001
     tolerance_da: Optional[float] = None
     mass_accuracy_ppm: Optional[float] = None
     n_sigma: float = 3.0
@@ -96,6 +97,28 @@ class MeanSpectrumOptions:
 
             if self.n_sigma <= 0.0:
                 raise ValueError("n_sigma must be positive for centroid smoothing.")
+
+
+@dataclass(frozen=True)
+class GlobalMeanSpectrumOptions:
+    """
+    Options for combining multiple mean spectra into a single global spectrum.
+
+    Attributes:
+        binning_p: Bin width in Da for the common m/z axis during combination.
+        use_intersection: If True, the common axis is built only on the overlapping m/z range.
+        tic_normalize: If True, each mean spectrum is TIC-normalized before averaging.
+        compress_axis: If True, drop bins where the final mean intensity is zero.
+    """
+
+    binning_p: float = 0.0001
+    use_intersection: bool = True
+    tic_normalize: bool = True
+    compress_axis: bool = False
+
+    def validate(self) -> None:
+        if self.binning_p <= 0:
+            raise ValueError("binning_p must be strictly positive.")
 
 
 @dataclass(frozen=True)
