@@ -137,6 +137,11 @@ class PeakPickingOptions:
         if self.binning_p <= 0:
             raise ValueError("binning_p must be strictly positive.")
 
+        if self.distance_da is None and self.distance_ppm is None:
+            raise ValueError(
+                "Provide either 'distance_da' (Da) " "or 'distance_ppm' (ppm)."
+            )
+
         if self.distance_da is not None and self.distance_da < 0:
             raise ValueError("distance_da must be non-negative.")
         if self.distance_ppm is not None and self.distance_ppm < 0:
