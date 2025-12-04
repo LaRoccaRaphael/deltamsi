@@ -4,11 +4,31 @@ import os
 import re
 import anndata as ad
 import numpy as np
-from typing import Dict, Literal, Optional, Any, List
+import pandas as pd
+from typing import Optional, Dict, Any, List, Literal
 
-from .processing.mean_spectrum import compute_mean_spectrum
-from .processing.combine_mean_spectra import combine_mean_spectra, Spectrum
-from .params.options import MeanSpectrumOptions, GlobalMeanSpectrumOptions
+from msix.processing.mean_spectrum import compute_mean_spectrum
+from msix.processing.combine_mean_spectra import combine_mean_spectra, Spectrum
+from msix.processing.peak_picking import peak_picking
+from msix.params.options import (
+    MeanSpectrumOptions,
+    GlobalMeanSpectrumOptions,
+    PeakPickingOptions,
+)
+
+
+class Logger:
+    def info(self, msg: str) -> None:
+        print(f"INFO: {msg}")
+
+    def warning(self, msg: str) -> None:
+        print(f"WARNING: {msg}")
+
+    def error(self, msg: str) -> None:
+        print(f"ERROR: {msg}")
+
+
+logger = Logger()
 
 
 class MSICube:
@@ -33,7 +53,7 @@ class MSICube:
         # The anndata object will be filled later; we initialize the slot now.
         self.adata: Optional[ad.AnnData] = None
 
-        print(
+        logger.info(
             f"MSICube initialized with {len(self.org_imzml_path_dict)} samples found."
         )
 
@@ -55,7 +75,7 @@ class MSICube:
                 # The replacement uses 'imzML' to handle both cases from the full_path
                 ibd_path = full_path.replace(".imzML", ".ibd").replace(".imzml", ".ibd")
                 if not os.path.exists(ibd_path):
-                    print(f"WARNING: Missing .ibd file for {filename}")
+                    logger.warning(f"Missing .ibd file for {filename}")
                     continue
 
                 # Store: sample_name -> full_path
@@ -88,8 +108,8 @@ class MSICube:
         }
 
         if kwargs:
-            print(
-                f"WARNING: Ignoring unknown arguments passed to mean spectra computation: {list(kwargs.keys())}"
+            logger.warning(
+                f"Ignoring unknown arguments passed to mean spectra computation: {list(kwargs.keys())}"
             )
 
         try:
@@ -102,7 +122,7 @@ class MSICube:
 
         # 2. Iteration and Calculation
         for sample_name, imzml_path in self.org_imzml_path_dict.items():
-            print(
+            logger.info(
                 f"Calculating mean spectrum for: {sample_name} (Mode: {options.mode})"
             )
 
@@ -111,14 +131,14 @@ class MSICube:
 
                 mean_spectra_dict[sample_name] = {"mz": mean_mz, "intensity": mean_y}
             except Exception as e:
-                print(f"Error during calculation for {sample_name}: {e}")
+                logger.error(f"error during calculation for {sample_name}: {e}")
                 continue
 
         # 3. Storing in AnnData
         self.adata.uns["mean_spectra"] = mean_spectra_dict
         self.adata.uns["mean_spectra_options"] = options.__dict__
         self.adata.uns["mean_spectra_samples"] = list(self.org_imzml_path_dict.keys())
-        print("Mean spectra calculated and stored.")
+        logger.info("Mean spectra calculated and stored.")
 
     def compute_global_mean_spectrum(self, **kwargs: Any) -> None:
         """
@@ -126,12 +146,12 @@ class MSICube:
         stored in adata.uns["mean_spectra"].
         """
         if self.adata is None or "mean_spectra" not in self.adata.uns:
-            print(
-                "ERROR: Individual mean spectra not calculated yet. Run compute_all_mean_spectra first."
+            logger.error(
+                "Individual mean spectra not calculated yet. Run compute_all_mean_spectra first."
             )
             return
 
-        print("Computing global mean spectrum...")
+        logger.info("Computing global mean spectrum...")
 
         # 1. Options Object Creation and Validation
         options_kwargs = {
@@ -142,8 +162,8 @@ class MSICube:
         }
 
         if kwargs:
-            print(
-                f"WARNING: Ignoring unknown arguments passed to global mean spectra computation: {list(kwargs.keys())}"
+            logger.warning(
+                f"Ignoring unknown arguments passed to global mean spectra computation: {list(kwargs.keys())}"
             )
 
         try:
@@ -167,13 +187,10 @@ class MSICube:
         try:
             mzs_combined, ints_combined = combine_mean_spectra(
                 list_of_spectra,
-                binning_p=options.binning_p,
-                use_intersection=options.use_intersection,
-                tic_normalize=options.tic_normalize,
-                compress_axis=options.compress_axis,
+                options=options,
             )
         except Exception as e:
-            print(f"Error during global spectrum combination: {e}")
+            logger.error(f"error during global spectrum combination: {e}")
             return
 
         # 4. Store the global mean spectrum in adata.uns
@@ -182,6 +199,86 @@ class MSICube:
             "intensity": ints_combined,
         }
         self.adata.uns["mean_spectrum_global_options"] = options.__dict__
-        print(
+        logger.info(
             "Global mean spectrum calculated and stored in adata.uns['mean_spectrum_global']."
+        )
+
+    def perform_peak_picking(self, **kwargs: Any) -> None:
+        """
+        Performs peak picking on the global mean spectrum and stores the selected
+        m/z values in adata.var.
+
+        The selection criteria (topn, distance_da, distance_ppm, binning_p)
+        are passed via kwargs.
+        """
+        logger.info("Starting peak picking on the global mean spectrum.")
+
+        # 1. Check required input data
+        if self.adata is None:
+            logger.error(
+                "AnnData object (adata) is not initialized. Run compute_all_mean_spectra first."
+            )
+            return
+
+        if "mean_spectrum_global" not in self.adata.uns:
+            logger.error(
+                "Global mean spectrum not found in adata.uns['mean_spectrum_global']. "
+                "Run compute_global_mean_spectrum first."
+            )
+            return
+
+        # 2. Options parsing and validation
+        # Extract relevant kwargs for PeakPickingOptions
+        options_kwargs = {
+            "topn": kwargs.pop("topn", 10000),
+            "binning_p": kwargs.pop("binning_p", 0.0001),
+            "distance_da": kwargs.pop("distance_da", None),
+            "distance_ppm": kwargs.pop("distance_ppm", None),
+        }
+        if kwargs:
+            logger.warning(
+                f"Ignoring unknown arguments passed to peak picking: {list(kwargs.keys())}"
+            )
+
+        try:
+            options = PeakPickingOptions(**options_kwargs)
+            options.validate()
+        except Exception as e:
+            logger.error(f"Invalid Peak Picking Options: {e}")
+            return
+
+        # 3. Retrieve data and call the processing function
+        global_spectrum = self.adata.uns["mean_spectrum_global"]
+        mzs_combined = global_spectrum["mz"]
+        ints_combined = global_spectrum["intensity"]
+
+        # Call the peak_picking function with the options object
+        selected_mzs = peak_picking(
+            mzs_combined,
+            ints_combined,
+            options=options,
+        )
+
+        logger.info(f"Peak picking finished. {len(selected_mzs)} m/z selected.")
+
+        # 4. Store results in adata.var
+
+        # Create a new DataFrame for var based on the selected m/z values.
+        # AnnData format prefers unique identifiers for the .var index.
+        # We use the formatted m/z as a unique identifier for AnnData.var.
+        new_var_data = pd.DataFrame(
+            data={"m/z": selected_mzs},
+            # Index formatted for a readable identifier (e.g., 'mz_200.0000')
+            index=[f"mz_{m:.4f}" for m in selected_mzs],
+        )
+        new_var_data.index.name = "feature_id"
+
+        # Replace adata.var
+        self.adata.var = new_var_data
+
+        # 5. Store options in adata.uns for provenance
+        self.adata.uns["peak_picking_options"] = options.to_dict()
+
+        logger.info(
+            "Selected m/z values stored in adata.var and adata.uns['peak_picking_options']."
         )

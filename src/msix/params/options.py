@@ -22,13 +22,13 @@ These structs specify *what* to do; implementation lives in:
 """
 
 from dataclasses import dataclass, asdict
-from typing import Any, Literal, Optional
-
+from typing import Optional, Literal, Dict, Any
 
 __all__ = [
     "BinningParams",
     "MeanSpectrumOptions",
     "GlobalMeanSpectrumOptions",
+    "PeakPickingOptions",
     "CentroidingParams",
     "PeakPickParams",
     "AxisPolicy",
@@ -119,6 +119,37 @@ class GlobalMeanSpectrumOptions:
     def validate(self) -> None:
         if self.binning_p <= 0:
             raise ValueError("binning_p must be strictly positive.")
+
+
+@dataclass(frozen=True)
+class PeakPickingOptions:
+    """Options for peak picking on a spectrum."""
+
+    topn: int = 10000
+    binning_p: float = 1e-4
+    distance_da: Optional[float] = None
+    distance_ppm: Optional[float] = None
+
+    def validate(self) -> None:
+        """Validate the peak picking parameters."""
+        if self.topn <= 0:
+            raise ValueError("topn must be a positive integer.")
+        if self.binning_p <= 0:
+            raise ValueError("binning_p must be strictly positive.")
+
+        if self.distance_da is not None and self.distance_da < 0:
+            raise ValueError("distance_da must be non-negative.")
+        if self.distance_ppm is not None and self.distance_ppm < 0:
+            raise ValueError("distance_ppm must be non-negative.")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a dictionary representation of the options."""
+        return {
+            "topn": self.topn,
+            "binning_p": self.binning_p,
+            "distance_da": self.distance_da,
+            "distance_ppm": self.distance_ppm,
+        }
 
 
 @dataclass(frozen=True)

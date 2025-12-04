@@ -2,17 +2,15 @@ import numpy as np
 from typing import Iterable, Tuple, List
 from scipy.interpolate import interp1d
 
+from msix.params.options import GlobalMeanSpectrumOptions
+
 # Define Spectrum type
 Spectrum = Tuple[np.ndarray, np.ndarray]
 
 
 def combine_mean_spectra(
     spectra: Iterable[Spectrum],
-    binning_p: float = 1e-4,
-    *,
-    use_intersection: bool = True,
-    tic_normalize: bool = True,
-    compress_axis: bool = False,
+    options: GlobalMeanSpectrumOptions,
 ) -> Spectrum:
     """
     Combine several mean spectra into a single mean-of-mean spectrum.
@@ -42,6 +40,9 @@ def combine_mean_spectra(
     mean_intensity : np.ndarray
         Mean of mean spectra on that axis.
     """
+
+    options.validate()
+
     # Materialize and ensure float arrays
     spec_list: List[Spectrum] = []
     for mzs, ints in spectra:
@@ -60,7 +61,7 @@ def combine_mean_spectra(
     mins = [mzs.min() for mzs, _ in spec_list]
     maxs = [mzs.max() for mzs, _ in spec_list]
 
-    if use_intersection:
+    if options.use_intersection:
         min_mz = max(mins)
         max_mz = min(maxs)
         if min_mz >= max_mz:
@@ -78,7 +79,7 @@ def combine_mean_spectra(
         # but protects against floating point issues or edge cases with False.
         return np.array([]), np.array([])
 
-    mz_axis = np.arange(min_mz, max_mz, binning_p, dtype=float)
+    mz_axis = np.arange(min_mz, max_mz, options.binning_p, dtype=float)
     combined = np.zeros_like(mz_axis)
     n_spec = 0
 
@@ -103,7 +104,7 @@ def combine_mean_spectra(
         ints_interp[ints_interp < 0] = 0.0
 
         # TIC-normalize on the common grid if requested
-        if tic_normalize:
+        if options.tic_normalize:
             tic = ints_interp.sum()
             if tic > 0:
                 ints_interp /= tic
@@ -117,7 +118,7 @@ def combine_mean_spectra(
     # Mean of mean spectra
     mean_intensity = combined / n_spec
 
-    if compress_axis:
+    if options.compress_axis:
         nz = mean_intensity > 0
         return mz_axis[nz], mean_intensity[nz]
 

@@ -2,13 +2,15 @@ from pathlib import Path
 import pytest
 import numpy as np
 import anndata as ad
+import pandas as pd
 from typing import Any, Literal, cast, List
 
 # Import the class and parameters to be tested
 from msix.core import MSICube
 from msix.params.options import (
     MeanSpectrumOptions,
-)  # Import added
+    PeakPickingOptions,
+)
 
 # ----------------------------------------------------------------------
 # FIXTURES (Helper functions for setting up test conditions)
@@ -86,6 +88,31 @@ def cube_with_mean_spectra(mock_imzml_data: str) -> MSICube:
     }
     cube.adata.uns["mean_spectra_samples"] = ["sample_A", "sample_B"]
 
+    return cube
+
+
+@pytest.fixture
+def cube_with_global_spectrum(mock_imzml_data: str) -> MSICube:
+    """
+    Creates an MSICube object pre-populated with a global mean spectrum,
+    ready for peak picking.
+    """
+    cube = MSICube(data_directory=mock_imzml_data)
+
+    cube.adata = ad.AnnData(
+        X=np.zeros((10, 10)),  # X data is not relevant for this step
+        obs=pd.DataFrame(index=[f"spot_{i}" for i in range(10)]),
+        var=pd.DataFrame(index=[f"old_mz_{i}" for i in range(10)]),
+    )
+
+    # Simulate a realistic global spectrum array
+    mzs = np.linspace(100.0, 500.0, 1000)
+    intensities = np.random.rand(1000)
+
+    cube.adata.uns["mean_spectrum_global"] = {
+        "mz": mzs,
+        "intensity": intensities,
+    }
     return cube
 
 
@@ -330,3 +357,140 @@ def test_compute_global_mean_spectrum_raises_value_error_on_invalid_options(
 
     # The external function should not be called if validation fails
     assert mock_combine_mean_spectra.call_count == 0
+
+
+# ----------------------------------------------------------------------
+# TESTS FOR perform_peak_picking METHOD
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "options_input",
+    [
+        {"topn": 5},
+        {"distance_da": 0.1, "binning_p": 0.005},
+        {"distance_ppm": 50.0, "topn": 10},
+    ],
+)
+def test_perform_peak_picking_success_and_storage(
+    cube_with_global_spectrum: MSICube, mocker: Any, options_input: dict[str, Any]
+) -> None:
+    """
+    Tests the successful execution of peak picking, including calling the external
+    function, updating adata.var, and storing provenance options.
+    """
+    cube = cube_with_global_spectrum
+
+    # 1. Define the mock output for peak_picking
+    expected_mzs = np.array([200.0, 350.0, 410.0, 150.0])
+    mock_peak_picking = mocker.patch(
+        "msix.core.msicube.peak_picking", return_value=expected_mzs
+    )
+
+    # 2. Execute the method
+    cube.perform_peak_picking(**options_input)
+
+    # 3. Assertions on the call to the external function
+    assert mock_peak_picking.called
+
+    call_args, call_kwargs = mock_peak_picking.call_args
+
+    # Verify that the options object passed is correct
+    options_obj = call_kwargs["options"]
+    assert isinstance(options_obj, PeakPickingOptions)
+
+    # Check that the object was created with input parameters
+    for key, value in options_input.items():
+        assert getattr(options_obj, key) == value
+
+    # 4. Assertions on adata structure update
+
+    # A. Check adata.var update
+    assert cube.adata is not None
+    assert "m/z" in cube.adata.var.columns
+    assert cube.adata.var.shape[0] == len(expected_mzs)
+
+    # Check that the stored m/z values match the mocked output
+    stored_mzs = cube.adata.var["m/z"].values
+    np.testing.assert_array_equal(stored_mzs, expected_mzs)
+
+    # Check that the index (feature_id) is correctly formatted
+    expected_index = [f"mz_{m:.4f}" for m in expected_mzs]
+    assert list(cube.adata.var.index) == expected_index
+    assert cube.adata.var.index.name == "feature_id"
+
+    # B. Check options provenance (adata.uns)
+    assert "peak_picking_options" in cube.adata.uns
+    stored_options = cube.adata.uns["peak_picking_options"]
+
+    # Verify stored options match the object (including defaults not passed)
+    assert stored_options["topn"] == options_obj.topn
+    assert stored_options["distance_da"] == options_obj.distance_da
+
+
+def test_perform_peak_picking_requires_global_spectrum(
+    cube_with_mean_spectra: MSICube, mocker: Any
+) -> None:
+    """Tests the guard that prevents execution if the global mean spectrum is missing."""
+    cube = cube_with_mean_spectra
+
+    # adata is initialized, but no 'mean_spectrum_global' key is present
+    mock_peak_picking = mocker.patch("msix.core.msicube.peak_picking")
+
+    # We expect the method to return early (no return value check needed, just no error)
+    cube.perform_peak_picking(topn=10)
+
+    # Assert that the peak picking function was never called
+    assert not mock_peak_picking.called
+
+
+def test_perform_peak_picking_raises_value_error_on_invalid_options(
+    cube_with_global_spectrum: MSICube, mocker: Any
+) -> None:
+    """Tests that a ValueError is raised (or handled via logger.error)
+    when PeakPickingOptions validation fails."""
+    cube = cube_with_global_spectrum
+
+    invalid_kwargs = {
+        "topn": 0,  # Should fail validation (must be > 0)
+    }
+    mock_peak_picking = mocker.patch("msix.core.msicube.peak_picking")
+
+    # Since the internal validation might log an error and return None,
+    # we assert that the core logic is stopped.
+    cube.perform_peak_picking(**invalid_kwargs)
+
+    # The external function should not be called if validation fails
+    assert not mock_peak_picking.called
+
+
+def test_perform_peak_picking_handles_unknown_kwargs(
+    cube_with_global_spectrum: MSICube, mocker: Any
+) -> None:
+    """Tests that the method ignores unknown kwargs and logs a warning."""
+    cube = cube_with_global_spectrum
+
+    # Setup mock output and peak picking
+    expected_mzs = np.array([200.0])
+    mock_peak_picking = mocker.patch(
+        "msix.core.msicube.peak_picking", return_value=expected_mzs
+    )
+
+    # Pass an unknown argument
+    unknown_kwargs = {"topn": 1, "unknown_param": 100}
+
+    # Execute (we rely on the logging warning, but the core function should succeed)
+    cube.perform_peak_picking(**unknown_kwargs)
+
+    # 1. Assert core success
+    assert mock_peak_picking.called
+    assert cube.adata is not None
+    assert cube.adata.var.shape[0] == 1
+
+    # 2. Assert that the valid option was used, and the invalid one was not used
+    options_obj = mock_peak_picking.call_args[1]["options"]
+    assert options_obj.topn == 1  # Valid option used
+
+    # The key 'unknown_param' must not exist in the options object
+    with pytest.raises(AttributeError):
+        _ = options_obj.u
