@@ -6,7 +6,7 @@ import anndata as ad
 from typing import Dict, Literal, Optional, Any
 
 from .processing.mean_spectrum import compute_mean_spectrum
-from .params.options import MeanSpecParams, BinningParams
+from .params.options import MeanSpectrumOptions
 
 
 class MSICube:
@@ -65,43 +65,55 @@ class MSICube:
         """
         Applies compute_mean_spectrum to all imzML files and stores the results.
 
-        kwargs can include parameters from BinningParams or MeanSpecParams.
+        All relevant parameters (min_mz, max_mz, binning_p, tolerance_da,
+        mass_accuracy_ppm, n_sigma) must be passed via kwargs and used
+        to construct a single MeanSpectrumOptions object.
         """
         if self.adata is None:
             self.adata = ad.AnnData()
 
         mean_spectra_dict = {}
 
-        # 1. Parameter Preparation
-        params = MeanSpecParams()
-        binning = BinningParams()
+        # 1. Options Object Creation and Validation
+        options_kwargs = {
+            "mode": mode,
+            "min_mz": kwargs.pop("min_mz", 0.0),
+            "max_mz": kwargs.pop("max_mz", 2000.0),
+            "binning_p": kwargs.pop("binning_p", 0.0001),
+            "tolerance_da": kwargs.pop("tolerance_da", None),
+            "mass_accuracy_ppm": kwargs.pop("mass_accuracy_ppm", None),
+            "n_sigma": kwargs.pop("n_sigma", 3.0),
+        }
 
-        # Simple method to update dataclasses with kwargs
-        param_keys = [f.name for f in MeanSpecParams.__dataclass_fields__.values()]
-        binning_keys = [f.name for f in BinningParams.__dataclass_fields__.values()]
+        if kwargs:
+            print(
+                f"WARNING: Ignoring unknown arguments passed to mean spectra computation: {list(kwargs.keys())}"
+            )
 
-        # Use only relevant keys for each class
-        mean_kwargs = {k: v for k, v in kwargs.items() if k in param_keys}
-        bin_kwargs = {k: v for k, v in kwargs.items() if k in binning_keys}
-
-        # Create new dataclass instances with updated values
-        params = params.__class__(**{**params.__dict__, **mean_kwargs})
-        binning = binning.__class__(**{**binning.__dict__, **bin_kwargs})
+        try:
+            options = MeanSpectrumOptions(**options_kwargs)
+            options.validate()
+        except ValueError as e:
+            raise ValueError(
+                f"Invalid Mean Spectrum Options provided for mode '{mode}': {e}"
+            ) from e
 
         # 2. Iteration and Calculation
         for sample_name, imzml_path in self.org_imzml_path_dict.items():
-            print(f"Calculating mean spectrum for: {sample_name} (Mode: {mode})")
+            print(
+                f"Calculating mean spectrum for: {sample_name} (Mode: {options.mode})"
+            )
 
             try:
-                mean_mz, mean_y = compute_mean_spectrum(
-                    imzml_path, mode=mode, binning=binning, params=params
-                )
+                mean_mz, mean_y = compute_mean_spectrum(imzml_path, options=options)
 
                 mean_spectra_dict[sample_name] = {"mz": mean_mz, "intensity": mean_y}
             except Exception as e:
                 print(f"Error during calculation for {sample_name}: {e}")
+                continue
 
         # 3. Storing in AnnData
         self.adata.uns["mean_spectra"] = mean_spectra_dict
+        self.adata.uns["mean_spectra_options"] = options.__dict__
         self.adata.uns["mean_spectra_samples"] = list(self.org_imzml_path_dict.keys())
         print("Mean spectra calculated and stored.")

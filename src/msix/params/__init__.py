@@ -1,13 +1,12 @@
-# msix/core/spec/__init__.py
 from .options import (
     BinningParams,
-    MeanSpecParams,
+    MeanSpectrumOptions,
     CentroidingParams,
     PeakPickParams,
     AxisPolicy,
     asdict_safe,
     validate_binning,
-    validate_mean,
+    # validate_mean,
     validate_centroiding,
     validate_peakpick,
     validate_axis_policy,
@@ -15,13 +14,13 @@ from .options import (
 
 __all__ = [
     "BinningParams",
-    "MeanSpecParams",
+    "MeanSpectrumOptions",
     "CentroidingParams",
     "PeakPickParams",
     "AxisPolicy",
     "asdict_safe",
     "validate_binning",
-    "validate_mean",
+    # "validate_mean",
     "validate_centroiding",
     "validate_peakpick",
     "validate_axis_policy",

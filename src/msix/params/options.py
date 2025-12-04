@@ -1,4 +1,3 @@
-# msix/core/spec/options.py
 """
 Phase 4 option specs (frozen dataclasses) for mean spectrum, peak picking,
 binning policy, and axis construction.
@@ -10,7 +9,7 @@ Design goals
 - Light validation helpers (raise ValueError with human-friendly messages).
 - Separate concerns:
   * BinningParams          — how to discretize m/z (ppm or Da) for profile data
-  * MeanSpecParams         — how to aggregate per-spectrum into a mean spectrum
+  * MeanSpectrumOptions    — how to aggregate per-spectrum into a mean spectrum (and common axis)
   * CentroidingParams      — how to centroid profile spectra on-the-fly (optional)
   * PeakPickParams         — how to pick peaks on the mean spectrum
   * AxisPolicy             — how to form /var/mz (from peaks or a grid)
@@ -28,13 +27,13 @@ from typing import Any, Literal, Optional
 
 __all__ = [
     "BinningParams",
-    "MeanSpecParams",
+    "MeanSpectrumOptions",
     "CentroidingParams",
     "PeakPickParams",
     "AxisPolicy",
     "asdict_safe",
     "validate_binning",
-    "validate_mean",
+    # "validate_mean"
     "validate_centroiding",
     "validate_peakpick",
     "validate_axis_policy",
@@ -42,6 +41,61 @@ __all__ = [
 
 
 # ----------------------------- Option dataclasses -----------------------------
+
+
+@dataclass(frozen=True)
+class MeanSpectrumOptions:
+    """
+    Options for computing the mean spectrum of an MSI cube.
+
+    These parameters define the common m/z axis and, optionally, the smoothing
+    or smearing required for centroid data.
+
+    Attributes:
+        mode: The aggregation method: "profile" (simple binning) or "centroid" (smoothed binning).
+        min_mz: Minimum m/z value for the common axis.
+        max_mz: Maximum m/z value for the common axis.
+        binning_p: Bin width in Da (e.g., 0.0001).
+        tolerance_da: Constant Gaussian width in Da (1σ) for centroid mode, if mass_accuracy_ppm is None.
+        mass_accuracy_ppm: Instrument accuracy in ppm (1σ). If provided, this overrides tolerance_da.
+        n_sigma: Radius of the Gaussian window in σ units (e.g., 3.0 for ±3σ window).
+    """
+
+    mode: Literal["profile", "centroid"]
+    min_mz: float
+    max_mz: float
+    binning_p: float
+    tolerance_da: Optional[float] = None
+    mass_accuracy_ppm: Optional[float] = None
+    n_sigma: float = 3.0
+
+    def validate(self) -> None:
+        """
+        Validates the coherence of the mean spectrum options.
+
+        Raises:
+            ValueError: If any option combination is invalid.
+        """
+        if self.mode not in {"profile", "centroid"}:
+            raise ValueError(
+                f"Mode must be 'profile' or 'centroid', not '{self.mode}'."
+            )
+
+        if self.min_mz >= self.max_mz:
+            raise ValueError("min_mz must be strictly less than max_mz.")
+
+        if self.binning_p <= 0.0:
+            raise ValueError("binning_p (bin width) must be positive.")
+
+        if self.mode == "centroid":
+            if self.tolerance_da is None and self.mass_accuracy_ppm is None:
+                raise ValueError(
+                    "For centroid mode, provide either 'tolerance_da' (Da) "
+                    "or 'mass_accuracy_ppm' (ppm)."
+                )
+
+            if self.n_sigma <= 0.0:
+                raise ValueError("n_sigma must be positive for centroid smoothing.")
 
 
 @dataclass(frozen=True)
@@ -64,32 +118,32 @@ class BinningParams:
     mz_max: Optional[float] = None
 
 
-@dataclass(frozen=True)
-class MeanSpecParams:
-    """
-    Parameters controlling how we form a mean spectrum across pixels.
-
-    normalize
-        "tic": divide each spectrum by its TIC before accumulation.
-        "none": raw intensities.
-    sample
-        If set, randomly subsample up to `sample` spectra for pilot steps (deterministic RNG).
-    agg
-        "mean" or "median_mean" (median across spectra, then mean smoothing).
-    winsor_pct
-        Optional winsorization percentage (0–5) applied per m/z bin before aggregation.
-    kde_sigma_ppm
-        For centroid inputs: Gaussian kernel σ (ppm) around each peak when accumulating.
-    kde_half_width_sigma
-        Truncate the Gaussian at ±k·σ to bound compute.
-    """
-
-    normalize: Literal["tic", "none"] = "tic"
-    sample: Optional[int] = None
-    agg: Literal["mean", "median_mean"] = "median_mean"
-    winsor_pct: float = 0.0
-    kde_sigma_ppm: float = 5.0
-    kde_half_width_sigma: float = 3.0
+# @dataclass(frozen=True)
+# class MeanSpecParams:
+#     """
+#     Parameters controlling how we form a mean spectrum across pixels.
+#
+#     normalize
+#         "tic": divide each spectrum by its TIC before accumulation.
+#         "none": raw intensities.
+#     sample
+#         If set, randomly subsample up to `sample` spectra for pilot steps (deterministic RNG).
+#     agg
+#         "mean" or "median_mean" (median across spectra, then mean smoothing).
+#     winsor_pct
+#         Optional winsorization percentage (0–5) applied per m/z bin before aggregation.
+#     kde_sigma_ppm
+#         For centroid inputs: Gaussian kernel σ (ppm) around each peak when accumulating.
+#     kde_half_width_sigma
+#         Truncate the Gaussian at ±k·σ to bound compute.
+#     """
+#
+#     normalize: Literal["tic", "none"] = "tic"
+#     sample: Optional[int] = None
+#     agg: Literal["mean", "median_mean"] = "median_mean"
+#     winsor_pct: float = 0.0
+#     kde_sigma_ppm: float = 5.0
+#     kde_half_width_sigma: float = 3.0
 
 
 @dataclass(frozen=True)
@@ -191,23 +245,23 @@ def validate_binning(o: BinningParams) -> None:
         _assert(o.mz_max > o.mz_min, "BinningParams.mz_max must be > mz_min")
 
 
-def validate_mean(o: MeanSpecParams) -> None:
-    _assert(
-        o.normalize in {"tic", "none"},
-        "MeanSpecParams.normalize must be 'tic' or 'none'",
-    )
-    if o.sample is not None:
-        _assert(o.sample > 0, "MeanSpecParams.sample must be > 0")
-    _assert(
-        o.agg in {"mean", "median_mean"},
-        "MeanSpecParams.agg must be 'mean' or 'median_mean'",
-    )
-    _assert(0.0 <= o.winsor_pct <= 5.0, "MeanSpecParams.winsor_pct must be in [0, 5]")
-    _assert(o.kde_sigma_ppm > 0, "MeanSpecParams.kde_sigma_ppm must be > 0")
-    _assert(
-        o.kde_half_width_sigma >= 1.0,
-        "MeanSpecParams.kde_half_width_sigma must be >= 1",
-    )
+# def validate_mean(o: MeanSpecParams) -> None:
+#     _assert(
+#         o.normalize in {"tic", "none"},
+#         "MeanSpecParams.normalize must be 'tic' or 'none'",
+#     )
+#     if o.sample is not None:
+#         _assert(o.sample > 0, "MeanSpecParams.sample must be > 0")
+#     _assert(
+#         o.agg in {"mean", "median_mean"},
+#         "MeanSpecParams.agg must be 'mean' or 'median_mean'",
+#     )
+#     _assert(0.0 <= o.winsor_pct <= 5.0, "MeanSpecParams.winsor_pct must be in [0, 5]")
+#     _assert(o.kde_sigma_ppm > 0, "MeanSpecParams.kde_sigma_ppm must be > 0")
+#     _assert(
+#         o.kde_half_width_sigma >= 1.0,
+#         "MeanSpecParams.kde_half_width_sigma must be >= 1",
+#    )
 
 
 def validate_centroiding(o: CentroidingParams) -> None:

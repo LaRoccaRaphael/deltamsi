@@ -25,7 +25,6 @@ dependencies = [
     "networkx>=3.2",
 
     # Large Data Handling & Parallelization
-    "zarr>=2.16",
     "numcodecs>=0.12",
     "zstandard",
     "blosc",
