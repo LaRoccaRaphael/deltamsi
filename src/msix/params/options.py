@@ -29,6 +29,7 @@ __all__ = [
     "MeanSpectrumOptions",
     "GlobalMeanSpectrumOptions",
     "PeakPickingOptions",
+    "PeakMatrixOptions",
     "CentroidingParams",
     "PeakPickParams",
     "AxisPolicy",
@@ -89,10 +90,13 @@ class MeanSpectrumOptions:
             raise ValueError("binning_p (bin width) must be positive.")
 
         if self.mode == "centroid":
-            if self.tolerance_da is None and self.mass_accuracy_ppm is None:
+            has_da = self.tolerance_da is not None and self.tolerance_da > 0
+            has_ppm = self.mass_accuracy_ppm is not None and self.mass_accuracy_ppm > 0
+
+            if not (has_da ^ has_ppm):  # XOR check
                 raise ValueError(
-                    "For centroid mode, provide either 'tolerance_da' (Da) "
-                    "or 'mass_accuracy_ppm' (ppm)."
+                    "For centroid mode, provide exactly one of "
+                    "'tolerance_da' (Da) or 'mass_accuracy_ppm' (ppm), and it must be positive."
                 )
 
             if self.n_sigma <= 0.0:
@@ -137,9 +141,13 @@ class PeakPickingOptions:
         if self.binning_p <= 0:
             raise ValueError("binning_p must be strictly positive.")
 
-        if self.distance_da is None and self.distance_ppm is None:
+        has_da = self.distance_da is not None and self.distance_da > 0
+        has_ppm = self.distance_ppm is not None and self.distance_ppm > 0
+
+        if not (has_da ^ has_ppm):  # XOR check
             raise ValueError(
-                "Provide either 'distance_da' (Da) " "or 'distance_ppm' (ppm)."
+                "Provide exactly one of "
+                "'distance_da' (Da) or 'distance_ppm' (ppm), and it must be positive."
             )
 
         if self.distance_da is not None and self.distance_da < 0:
@@ -154,6 +162,31 @@ class PeakPickingOptions:
             "binning_p": self.binning_p,
             "distance_da": self.distance_da,
             "distance_ppm": self.distance_ppm,
+        }
+
+
+@dataclass(frozen=True)
+class PeakMatrixOptions:
+    """Options for extracting the peak intensity matrix (X)."""
+
+    tol_da: Optional[float] = None
+    tol_ppm: Optional[float] = None
+
+    def validate(self) -> None:
+        """Validate peak matrix extraction parameters."""
+        has_da = self.tol_da is not None and self.tol_da > 0
+        has_ppm = self.tol_ppm is not None and self.tol_ppm > 0
+
+        if not (has_da ^ has_ppm):  # XOR check
+            raise ValueError(
+                "For peak matrix extraction, provide exactly one of "
+                "'tol_da' (Da) or 'tol_ppm' (ppm), and it must be positive."
+            )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "tol_da": self.tol_da,
+            "tol_ppm": self.tol_ppm,
         }
 
 

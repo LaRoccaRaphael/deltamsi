@@ -9,11 +9,12 @@ from typing import Optional, Dict, Any, List, Literal
 
 from msix.processing.mean_spectrum import compute_mean_spectrum
 from msix.processing.combine_mean_spectra import combine_mean_spectra, Spectrum
-from msix.processing.peak_picking import peak_picking
+from msix.processing.peak_picking import peak_picking, extract_peak_matrix
 from msix.params.options import (
     MeanSpectrumOptions,
     GlobalMeanSpectrumOptions,
     PeakPickingOptions,
+    PeakMatrixOptions,
 )
 
 
@@ -281,4 +282,116 @@ class MSICube:
 
         logger.info(
             "Selected m/z values stored in adata.var and adata.uns['peak_picking_options']."
+        )
+
+    def extract_peak_matrix(self, **kwargs: Any) -> None:
+        """
+        Extracts peak intensities for all pixels in all samples based on the
+        selected m/z values in adata.var.
+
+        Populates:
+            - adata.X (intensities)
+            - adata.obsm['spatial'] (coordinates)
+            - adata.obs['sample'] (provenance)
+
+        Kwargs:
+            tol_da (float): Tolerance in Dalton.
+            tol_ppm (float): Tolerance in PPM.
+        """
+        logger.info("Starting extraction of peak intensity matrix (X) for all samples.")
+
+        # 1. Prerequisites Check
+        if self.adata is None or self.adata.var is None or "m/z" not in self.adata.var:
+            logger.error(
+                "Target m/z list not found in adata.var['m/z']. "
+                "Run perform_peak_picking first."
+            )
+            return
+
+        # 2. Options Parsing
+        options_kwargs = {
+            "tol_da": kwargs.pop("tol_da", None),
+            "tol_ppm": kwargs.pop("tol_ppm", None),
+        }
+
+        try:
+            options = PeakMatrixOptions(**options_kwargs)
+            options.validate()
+        except ValueError as e:
+            logger.error(f"Invalid Peak Matrix Options: {e}")
+            return
+
+        # 3. Preparation
+        target_mzs = self.adata.var["m/z"].values
+
+        # Containers for batch accumulation
+        X_blocks = []
+        coords_blocks = []
+        sample_labels = []
+        obs_names = []
+
+        # 4. Processing Loop
+        # Sort keys to ensure reproducible order of samples
+        sorted_samples = sorted(self.org_imzml_path_dict.keys())
+
+        for sample_name in sorted_samples:
+            imzml_path = str(self.org_imzml_path_dict[sample_name])
+            logger.info(f"Extracting matrix for sample: {sample_name}")
+
+            try:
+                X_sample, coords_sample = extract_peak_matrix(
+                    imzml_path, target_mzs, options=options
+                )
+
+                n_pixels = X_sample.shape[0]
+
+                X_blocks.append(X_sample)
+                coords_blocks.append(coords_sample)
+
+                # Create labels for obs
+                sample_labels.extend([sample_name] * n_pixels)
+                # Unique index: sample_name + pixel_index
+                obs_names.extend([f"{sample_name}_p{i}" for i in range(n_pixels)])
+
+            except Exception as e:
+                logger.error(f"Failed to extract matrix for {sample_name}: {e}")
+                # We stop here to avoid creating a corrupted AnnData object with missing samples
+                return
+
+        # 5. Concatenation and Assembly
+        logger.info("Concatenating data from all samples...")
+
+        try:
+            X_all = np.vstack(X_blocks)
+            coords_all = np.vstack(coords_blocks)
+        except ValueError as e:
+            logger.error(
+                f"Error during concatenation (possibly no data extracted): {e}"
+            )
+            return
+
+        # 6. Final AnnData Population
+
+        # We recreate the AnnData object to resize dimensions (n_obs changed from 0 to N_total)
+        # while keeping var and uns.
+        new_obs = pd.DataFrame({"sample": sample_labels}, index=obs_names)
+
+        # Make 'sample' a categorical column (efficient for large datasets)
+        new_obs["sample"] = new_obs["sample"].astype("category")
+
+        self.adata = ad.AnnData(
+            X=X_all,
+            obs=new_obs,
+            var=self.adata.var,  # Keep the selected peaks
+            uns=self.adata.uns,  # Keep provenance options
+            obsm={"spatial": coords_all},
+        )
+
+        # Store options used for this step
+        self.adata.uns["matrix_extraction_options"] = options.to_dict()
+
+        logger.info(
+            f"Extraction complete. "
+            f"Final shape: {self.adata.shape} (Pixels x Peaks). "
+            f"Data stored in adata.X, adata.obsm['spatial'], adata.obs['sample']."
         )

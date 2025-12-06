@@ -3,8 +3,10 @@
 import numpy as np
 from scipy.interpolate import interp1d
 from scipy.signal import find_peaks
+from typing import Tuple
+from pyimzml.ImzMLParser import ImzMLParser
 
-from msix.params.options import PeakPickingOptions
+from msix.params.options import PeakPickingOptions, PeakMatrixOptions
 
 
 def peak_picking(
@@ -124,3 +126,140 @@ def peak_picking(
     # Sort final peaks by m/z ascending
     order = np.argsort(selected_mz_array)
     return selected_mz_array[order]
+
+
+def _align_peaks_to_targets(
+    mzs: np.ndarray,
+    intensities: np.ndarray,
+    target_mz: np.ndarray,
+    options: PeakMatrixOptions,
+) -> np.ndarray:
+    """
+    Align one spectrum's peaks to a set of target m/z values.
+
+    For each experimental peak (m, I), all target m/z values within the
+    tolerance window are assigned intensity max(current, I).
+
+    Parameters
+    ----------
+    mzs : np.ndarray
+        Experimental m/z values (1D).
+    intensities : np.ndarray
+        Experimental intensities (1D, same length as mzs).
+    target_mz : np.ndarray
+        Sorted target m/z values (1D).
+    tol_da : float, optional
+        Mass tolerance in Da (constant window).
+    tol_ppm : float, optional
+        Mass tolerance in ppm (window scales with m/z).
+
+    Returns
+    -------
+    pixel_vec : np.ndarray
+        1D array of length len(target_mz) with intensities for this spectrum.
+    """
+    options.validate()
+
+    mzs = np.asarray(mzs, dtype=float)
+    intensities = np.asarray(intensities, dtype=float)
+
+    # Ensure sorted experimental peaks
+    order = np.argsort(mzs)
+    mzs = mzs[order]
+    intensities = intensities[order]
+
+    pixel_vec = np.zeros(target_mz.size, dtype=float)
+
+    for m, i in zip(mzs, intensities):
+        if i <= 0:
+            continue
+
+        if options.tol_ppm is not None:
+            tol = m * options.tol_ppm * 1e-6  # ppm -> Da
+        else:
+            tol = options.tol_da if options.tol_da is not None else 0.0
+
+        if tol <= 0:
+            continue
+
+        left_m = m - tol
+        right_m = m + tol
+
+        # Find indices in target_mz within [left_m, right_m]
+        left = np.searchsorted(target_mz, left_m, side="left")
+        right = np.searchsorted(target_mz, right_m, side="right")
+
+        if left >= right:
+            continue  # no target in this window
+
+        # Update with max intensity (vectorised)
+        pixel_vec[left:right] = np.maximum(pixel_vec[left:right], i)
+
+    return pixel_vec
+
+
+def extract_peak_matrix(
+    imzml_path: str,
+    target_mzs: np.ndarray,
+    options: PeakMatrixOptions,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Given an imzML file, a list of m/z values and a tolerance (Da or ppm),
+    build a matrix X where:
+
+      - rows = spectra (pixels),
+      - columns = target m/z,
+      - X[i, j] = intensity of m/z[j] in spectrum i (max within tolerance).
+
+    Also returns an array of (x, y) coordinates for each spectrum.
+
+    Parameters
+    ----------
+    imzml_path : str
+        Path to the imzML file.
+    mz_list : array-like
+        List/array of target m/z values.
+    tol_da : float, optional
+        Tolerance in Da (one-sided half-width).
+    tol_ppm : float, optional
+        Tolerance in ppm (half-width). Only one of tol_da or tol_ppm
+        must be provided.
+
+    Returns
+    -------
+    X : np.ndarray
+        2D array of shape (n_spectra, n_targets).
+    coords : np.ndarray
+        2D array of shape (n_spectra, 2) with [x, y] per spectrum.
+    """
+    options.validate()
+
+    # Ensure target m/z are sorted (crucial for searchsorted)
+    # We assume the caller passes sorted m/z from adata.var, but robust code checks.
+    if np.any(np.diff(target_mzs) < 0):
+        target_mzs = np.sort(target_mzs)
+
+    parser = ImzMLParser(imzml_path)
+    n_spectra = len(parser.coordinates)
+    n_targets = target_mzs.size
+
+    X = np.zeros((n_spectra, n_targets), dtype=np.float32)  # float32 saves RAM
+    coords = np.zeros((n_spectra, 2), dtype=int)
+
+    for i, (x, y, z) in enumerate(parser.coordinates):
+        mzs, intensities = parser.getspectrum(i)
+        coords[i, 0] = x
+        coords[i, 1] = y
+
+        if mzs is None or intensities is None or len(mzs) == 0:
+            continue
+
+        pixel_vec = _align_peaks_to_targets(
+            mzs,
+            intensities,
+            target_mzs,
+            options=options,
+        )
+        X[i, :] = pixel_vec
+
+    return X, coords
