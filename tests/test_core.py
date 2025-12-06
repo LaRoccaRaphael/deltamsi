@@ -6,7 +6,7 @@ import pandas as pd
 from typing import Any, Literal, cast, List
 
 # Import the class and parameters to be tested
-from msix.core import MSICube
+from msix.core.msicube import MSICube
 from msix.params.options import (
     MeanSpectrumOptions,
     PeakPickingOptions,

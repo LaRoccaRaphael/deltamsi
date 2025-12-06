@@ -5,8 +5,10 @@ import re
 import anndata as ad
 import numpy as np
 import pandas as pd
-from typing import Optional, Dict, Any, List, Literal
+from typing import Optional, Dict, Any, List, Literal, Sequence
 
+from msix.plotting.ion_images import plot_ion_images
+from msix.plotting.spectrum import plot_mean_spectrum_windows
 from msix.processing.mean_spectrum import compute_mean_spectrum
 from msix.processing.combine_mean_spectra import combine_mean_spectra, Spectrum
 from msix.processing.peak_picking import peak_picking, extract_peak_matrix
@@ -394,4 +396,47 @@ class MSICube:
             f"Extraction complete. "
             f"Final shape: {self.adata.shape} (Pixels x Peaks). "
             f"Data stored in adata.X, adata.obsm['spatial'], adata.obs['sample']."
+        )
+
+    def plot_ion_images(self, sample_name: str, **kwargs: Any) -> None:
+        """
+        Plots ion images for a specific sample.
+
+        This is a wrapper for msix.plotting.ion_images.plot_ion_images.
+
+        Parameters
+        ----------
+        sample_name : str
+            The name of the sample to visualize.
+        **kwargs
+            Arguments passed to the plotting function (e.g., mz_list, ncols, cmap, vmin, vmax).
+        """
+        return plot_ion_images(self, sample_name=sample_name, **kwargs)
+
+    def plot_mean_spectrum_windows(
+        self,
+        labels: Sequence[str],
+        peak_mzs: Sequence[float],
+        span_da: float = 0.1,
+        **kwargs: Any,
+    ) -> None:
+        """
+        Plots zoomed windows of mean spectra around m/z of interest for
+        multiple samples.
+
+        This is a wrapper for msix.plotting.spectrum.plot_mean_spectrum_windows.
+
+        Parameters
+        ----------
+        labels : list of str
+            List of sample names (keys in adata.uns['mean_spectra']) to compare.
+        peak_mzs : list of float
+            List of target m/z values to center the windows on.
+        span_da : float
+            Half-width of the zoom window in Da (default 0.1 Da).
+        **kwargs
+            Arguments passed to the plotting function (e.g., tol_da, tol_ppm, ncols, figsize).
+        """
+        return plot_mean_spectrum_windows(
+            self, labels=labels, peak_mzs=peak_mzs, span_da=span_da, **kwargs
         )
