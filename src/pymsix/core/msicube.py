@@ -190,7 +190,7 @@ class MSICube:
         try:
             mzs_combined, ints_combined = combine_mean_spectra(
                 list_of_spectra,
-                **options.__dict__,  # Use __dict__ to expose options as kwargs
+                options,  # Use __dict__ to expose options as kwargs
             )
         except Exception as e:
             logger.error(f"error during global spectrum combination: {e}")
@@ -257,8 +257,8 @@ class MSICube:
 
         # Call the peak_picking function with the options object
         selected_mzs = peak_picking(
-            mzs_combined,
-            ints_combined,
+            mzs=mzs_combined,
+            intensities=ints_combined,
             options=options,
         )
 
