@@ -131,15 +131,12 @@ class PeakPickingOptions:
         if self.binning_p <= 0:
             raise ValueError("binning_p must be strictly positive.")
 
-        # TODO remove XOR
-
         has_da = self.distance_da is not None and self.distance_da > 0
         has_ppm = self.distance_ppm is not None and self.distance_ppm > 0
 
-        if not (has_da ^ has_ppm):  # XOR check
+        if has_da and has_ppm:
             raise ValueError(
-                "Provide exactly one of "
-                "'distance_da' (Da) or 'distance_ppm' (ppm), and it must be positive."
+                "Provide exactly one of 'distance_da' (Da) or 'distance_ppm' (ppm), not both."
             )
 
         if self.distance_da is not None and self.distance_da < 0:

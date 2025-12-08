@@ -190,7 +190,7 @@ class MSICube:
         try:
             mzs_combined, ints_combined = combine_mean_spectra(
                 list_of_spectra,
-                options=options,
+                **options.__dict__,  # Use __dict__ to expose options as kwargs
             )
         except Exception as e:
             logger.error(f"error during global spectrum combination: {e}")
@@ -216,7 +216,7 @@ class MSICube:
         """
         logger.info("Starting peak picking on the global mean spectrum.")
 
-        # 1. Check required input data
+        # Check required input data
         if self.adata is None:
             logger.error(
                 "AnnData object (adata) is not initialized. Run compute_all_mean_spectra first."
@@ -230,7 +230,7 @@ class MSICube:
             )
             return
 
-        # 2. Options parsing and validation
+        # Options parsing and validation
         # Extract relevant kwargs for PeakPickingOptions
         options_kwargs = {
             "topn": kwargs.pop("topn", 10000),
@@ -250,7 +250,7 @@ class MSICube:
             logger.error(f"Invalid Peak Picking Options: {e}")
             return
 
-        # 3. Retrieve data and call the processing function
+        # Retrieve data and call the processing function
         global_spectrum = self.adata.uns["mean_spectrum_global"]
         mzs_combined = global_spectrum["mz"]
         ints_combined = global_spectrum["intensity"]
@@ -262,9 +262,10 @@ class MSICube:
             options=options,
         )
 
+        n_vars_new = len(selected_mzs)
         logger.info(f"Peak picking finished. {len(selected_mzs)} m/z selected.")
 
-        # 4. Store results in adata.var
+        # Store results in adata.var
 
         # Create a new DataFrame for var based on the selected m/z values.
         # AnnData format prefers unique identifiers for the .var index.
@@ -276,10 +277,45 @@ class MSICube:
         )
         new_var_data.index.name = "feature_id"
 
-        # Replace adata.var
-        self.adata.var = new_var_data
+        n_obs = self.adata.n_obs
+        needs_resize = self.adata.n_vars != n_vars_new
 
-        # 5. Store options in adata.uns for provenance
+        if needs_resize:
+            logger.warning(
+                f"Feature count mismatch: {self.adata.n_vars} old features vs. {n_vars_new} new features. "
+                "Recreating AnnData structure to align dimensions."
+            )
+
+            # Save non-feature-dimension data before reconstruction
+            # We assume only 'spatial' might be in obsm before extract_peak_matrix
+            current_obs = self.adata.obs.copy()
+            current_uns = self.adata.uns.copy()
+            current_obsm = self.adata.obsm.copy()
+
+            # Create a placeholder X (zero matrix) if there are observations (pixels)
+            # This is necessary because the AnnData object in the fixture starts with X.
+            new_X = np.zeros((n_obs, n_vars_new)) if n_obs > 0 else None
+
+            # Reconstruct the AnnData object with the new var, obs, and placeholder X
+            self.adata = ad.AnnData(
+                X=new_X,
+                obs=current_obs,
+                var=new_var_data,  # This sets the new feature dimension
+                uns=current_uns,
+                obsm=current_obsm,
+            )
+
+            if n_obs > 0:
+                logger.warning(
+                    "adata.X structure reset to zero matrix placeholder to match new feature count. "
+                    "Run extract_peak_matrix() next to populate real data."
+                )
+
+        else:
+            # If n_vars did not change, simply replace var
+            self.adata.var = new_var_data
+
+        # Store options in adata.uns for provenance
         self.adata.uns["peak_picking_options"] = options.to_dict()
 
         logger.info(
