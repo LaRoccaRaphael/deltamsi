@@ -18,12 +18,6 @@ dependencies = [
     "anndata>=0.10",
     "pyimzML>=1.5.4",
 
-    # Core Analysis & Clustering
-    "scikit-learn>=1.4",
-    "python-igraph",
-    "leidenalg",
-    "networkx>=3.2",
-
     # Large Data Handling & Parallelization
     "numcodecs>=0.12",
     "zstandard",
@@ -35,10 +29,17 @@ dependencies = [
     # Utilities
     "tqdm>=4.66",
     "rich>=13.7",
-    "typer>=0.12",
 ]
 
 [project.optional-dependencies]
+
+analysis = [
+    "scikit-learn>=1.4",
+    "python-igraph",
+    "leidenalg",
+    "networkx>=3.2",
+]
+
 viz = [
     "matplotlib>=3.8",
     "seaborn",
@@ -50,6 +51,10 @@ viz = [
     "shapely>=2.0",
     "pyarrow>=15",
     "fastparquet",
+]
+
+cli = [
+    "typer>=0.12",
 ]
 
 dev = [
