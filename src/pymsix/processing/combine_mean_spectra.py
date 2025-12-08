@@ -2,7 +2,7 @@ import numpy as np
 from typing import Iterable, Tuple, List
 from scipy.interpolate import interp1d
 
-from msix.params.options import GlobalMeanSpectrumOptions
+from pymsix.params.options import GlobalMeanSpectrumOptions
 
 # Define Spectrum type
 Spectrum = Tuple[np.ndarray, np.ndarray]

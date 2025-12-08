@@ -2,8 +2,8 @@ import pytest
 import numpy as np
 import anndata as ad
 from unittest.mock import MagicMock, patch
-from msix.core.msicube import MSICube
-from msix.plotting.spectrum import plot_mean_spectrum_windows
+from pymsix.core.msicube import MSICube
+from pymsix.plotting.spectrum import plot_mean_spectrum_windows
 from typing import Any
 
 

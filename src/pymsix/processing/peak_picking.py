@@ -6,7 +6,7 @@ from scipy.signal import find_peaks
 from typing import Tuple
 from pyimzml.ImzMLParser import ImzMLParser
 
-from msix.params.options import PeakPickingOptions, PeakMatrixOptions
+from pymsix.params.options import PeakPickingOptions, PeakMatrixOptions
 
 
 def peak_picking(

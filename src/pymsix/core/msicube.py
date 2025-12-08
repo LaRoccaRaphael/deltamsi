@@ -7,12 +7,12 @@ import numpy as np
 import pandas as pd
 from typing import Optional, Dict, Any, List, Literal, Sequence
 
-from msix.plotting.ion_images import plot_ion_images
-from msix.plotting.spectrum import plot_mean_spectrum_windows
-from msix.processing.mean_spectrum import compute_mean_spectrum
-from msix.processing.combine_mean_spectra import combine_mean_spectra, Spectrum
-from msix.processing.peak_picking import peak_picking, extract_peak_matrix
-from msix.params.options import (
+from pymsix.plotting.ion_images import plot_ion_images
+from pymsix.plotting.spectrum import plot_mean_spectrum_windows
+from pymsix.processing.mean_spectrum import compute_mean_spectrum
+from pymsix.processing.combine_mean_spectra import combine_mean_spectra, Spectrum
+from pymsix.processing.peak_picking import peak_picking, extract_peak_matrix
+from pymsix.params.options import (
     MeanSpectrumOptions,
     GlobalMeanSpectrumOptions,
     PeakPickingOptions,

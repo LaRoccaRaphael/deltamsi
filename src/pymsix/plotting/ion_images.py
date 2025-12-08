@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from typing import Sequence, Optional, Tuple, TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from msix.core.msicube import MSICube
+    from pymsix.core.msicube import MSICube
 
 
 def _plot_ion_images_core(

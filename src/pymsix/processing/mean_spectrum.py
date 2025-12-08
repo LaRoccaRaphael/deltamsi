@@ -4,7 +4,7 @@ from pyimzml.ImzMLParser import ImzMLParser
 from scipy.stats import norm
 from scipy.signal import fftconvolve
 
-from msix.params.options import MeanSpectrumOptions
+from pymsix.params.options import MeanSpectrumOptions
 
 
 def _smooth_centroid_constant_da(

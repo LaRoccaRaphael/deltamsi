@@ -1,5 +1,5 @@
 [project]
-name = "msix"
+name = "pymsix"
 version = "0.1.0"
 description = "A Scanpy-like package for High-Resolution Mass Spectrometry Imaging (MSI)."
 authors = [
@@ -69,7 +69,7 @@ dev = [
 ]
 
 [tool.poetry]
-packages = [{include = "msix", from = "src"}]
+packages = [{include = "pymsix", from = "src"}]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
