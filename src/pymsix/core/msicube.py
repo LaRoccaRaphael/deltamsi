@@ -104,9 +104,9 @@ class MSICube:
             "mode": mode,
             "min_mz": kwargs.pop("min_mz", 0.0),
             "max_mz": kwargs.pop("max_mz", 2000.0),
-            "binning_p": kwargs.pop("binning_p", 0.0001),
+            "binning_p": kwargs.pop("binning_p", 0.001),
             "tolerance_da": kwargs.pop("tolerance_da", None),
-            "mass_accuracy_ppm": kwargs.pop("mass_accuracy_ppm", None),
+            "mass_accuracy_ppm": kwargs.pop("mass_accuracy_ppm", 3),
             "n_sigma": kwargs.pop("n_sigma", 3.0),
         }
 

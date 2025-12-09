@@ -56,9 +56,9 @@ class MeanSpectrumOptions:
     mode: Literal["profile", "centroid"]
     min_mz: float = 0.0
     max_mz: float = 2000.0
-    binning_p: float = 0.0001
+    binning_p: float = 0.001
     tolerance_da: Optional[float] = None
-    mass_accuracy_ppm: Optional[float] = None
+    mass_accuracy_ppm: Optional[float] = 3.0
     n_sigma: float = 3.0
 
     def validate(self) -> None:

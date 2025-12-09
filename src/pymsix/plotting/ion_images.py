@@ -23,9 +23,6 @@ def _plot_ion_images_core(
     Internal low-level function to plot ion images from numpy arrays.
     """
     selected_peaks = np.asarray(selected_peaks, dtype=float)
-    # Ensure X is dense if it's sparse (common in AnnData)
-    if hasattr(X, "toarray"):
-        X = X.toarray()
     X = np.asarray(X, dtype=float)
     coords = np.asarray(coords)
 
@@ -81,13 +78,8 @@ def _plot_ion_images_core(
         figsize = (4 * ncols, 4 * nrows)
 
     fig, axes = plt.subplots(nrows, ncols, figsize=figsize)
-
-    # Handle single subplot case (axes is not an array)
-    if n_imgs == 1:
-        axes = np.array([axes])
-
-    # Flatten axes for easy iteration and ensure it's iterable
-    axes_flat = np.atleast_1d(axes).flatten()
+    axes = np.atleast_2d(axes)
+    axes_flat = axes.flatten()
 
     for k, (ax, col_idx, mz_label) in enumerate(zip(axes_flat, col_indices, labels)):
         # Initialise image with NaNs (in case of gaps)
@@ -113,7 +105,7 @@ def _plot_ion_images_core(
             vmax=_vmax,
             interpolation="nearest",
         )
-        ax.set_title(f"{mz_label:.4f} m/z")
+        ax.set_title(f"{mz_label:.4f} m/z (col {col_idx})")
         ax.axis("off")
 
         # Add colorbar

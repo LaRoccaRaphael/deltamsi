@@ -60,7 +60,8 @@ def _plot_mean_spectrum_windows_core(
         for spec_idx, (mzs, ints) in enumerate(mean_spectra):
             mzs = np.asarray(mzs, dtype=float)
             ints = np.asarray(ints, dtype=float)
-            # Basic shape check handled by extraction usually, but good to keep
+            if mzs.shape != ints.shape:
+                raise ValueError("Each (mzs, intensities) pair must have same shape.")
 
             mask = (mzs >= x_min) & (mzs <= x_max)
             if not np.any(mask):
@@ -69,16 +70,14 @@ def _plot_mean_spectrum_windows_core(
             mz_win = mzs[mask]
             int_win = ints[mask]
 
-            current_max = float(int_win.max()) if int_win.size else 0.0
-            if current_max > local_ymax:
-                local_ymax = current_max
+            local_ymax = max(local_ymax, float(int_win.max()) if int_win.size else 0.0)
 
             if labels is not None:
                 label = labels[spec_idx]
             else:
                 label = None
 
-            ax.plot(mz_win, int_win, label=label, linewidth=1.2, alpha=0.8)
+            ax.plot(mz_win, int_win, label=label)
 
         # If nothing was plotted in this window
         if local_ymax == 0.0:
@@ -94,14 +93,14 @@ def _plot_mean_spectrum_windows_core(
             tol_cur_da = mz0 * tol_ppm * 1e-6
         else:
             # Use tol_da, defaulting to 0.0 if not set (though error handling prevents this path)
-            tol_cur_da = tol_da if tol_da is not None else 0.0
+            tol_cur_da = tol_da
 
         # Vertical dashed lines at mz0 ± tolerance
         ax.axvline(
-            mz0 - tol_cur_da, linestyle="--", color="gray", linewidth=0.8, alpha=0.5
+            mz0 - tol_cur_da, linestyle="--", color="red", linewidth=1, alpha=0.5
         )
         ax.axvline(
-            mz0 + tol_cur_da, linestyle="--", color="gray", linewidth=0.8, alpha=0.5
+            mz0 + tol_cur_da, linestyle="--", color="red", linewidth=1, alpha=0.5
         )
 
         # Red vertical solid lines for all peaks in peak_mzs_arr that fall in the window
@@ -111,7 +110,7 @@ def _plot_mean_spectrum_windows_core(
             ax.axvline(mz_peak, color="red", linewidth=1, linestyle="-", alpha=0.6)
 
         ax.set_xlim(x_min, x_max)
-        ax.set_ylim(0, local_ymax * 1.1)  # Add 10% headroom
+        ax.set_ylim(0, local_ymax * 1.05)
         ax.set_xlabel("m/z")
         ax.set_ylabel("Intensity")
         title_tol = f"tol ≈ {tol_cur_da:.4g} Da"
