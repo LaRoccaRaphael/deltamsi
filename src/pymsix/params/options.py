@@ -29,6 +29,7 @@ __all__ = [
     "GlobalMeanSpectrumOptions",
     "PeakPickingOptions",
     "PeakMatrixOptions",
+    "RecalibrationOptions",
 ]
 
 
@@ -177,3 +178,36 @@ class PeakMatrixOptions:
             "tol_da": self.tol_da,
             "tol_ppm": self.tol_ppm,
         }
+
+
+@dataclass(frozen=True)
+class RecalibrationOptions:
+    """
+    Options for performing mass spectrometry imaging (MSI) recalibration
+    using a mass database and the RANSAC algorithm.
+
+    Attributes:
+        step: Bandwidth for the Kernel Density Estimation (KDE) function
+              used in hit selection (e.g., 0.0005 Da).
+        tol: Dalton tolerance for identifying calibration hits (e.g., 0.01 Da).
+        dalim: Limit in Dalton (Da) around the maximum KDE peak for selecting
+               the final hits for RANSAC fitting (e.g., 0.002 Da).
+        npeak: Number of top intense peaks per spectrum to use for
+               the calibration hit search (e.g., 300).
+    """
+
+    step: float = 0.0005
+    tol: float = 0.01
+    dalim: float = 0.002
+    npeak: int = 300
+
+    def validate(self) -> None:
+        if self.step <= 0:
+            raise ValueError("step (KDE bandwidth) must be strictly positive.")
+        if self.tol <= 0:
+            raise ValueError("tol (Da tolerance) must be strictly positive.")
+        if self.dalim <= 0:
+            raise ValueError("dalim (Da limit) must be strictly positive.")
+        if self.npeak <= 0:
+            # Note: Cast to int is not necessary here as it is already typed as int
+            raise ValueError("npeak (number of peaks) must be a positive integer.")

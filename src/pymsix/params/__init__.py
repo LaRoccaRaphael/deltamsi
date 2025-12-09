@@ -3,6 +3,7 @@ from .options import (
     GlobalMeanSpectrumOptions,
     PeakPickingOptions,
     PeakMatrixOptions,
+    RecalibrationOptions,
 )
 
 __all__ = [
@@ -10,4 +11,5 @@ __all__ = [
     "GlobalMeanSpectrumOptions",
     "PeakPickingOptions",
     "PeakMatrixOptions",
+    "RecalibrationOptions",
 ]

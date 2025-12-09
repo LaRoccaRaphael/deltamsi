@@ -1,5 +1,6 @@
 # class MSICube
 
+from concurrent.futures import ProcessPoolExecutor
 import os
 import re
 import anndata as ad
@@ -12,11 +13,13 @@ from pymsix.plotting.spectrum import plot_mean_spectrum_windows
 from pymsix.processing.mean_spectrum import compute_mean_spectrum
 from pymsix.processing.combine_mean_spectra import combine_mean_spectra, Spectrum
 from pymsix.processing.peak_picking import peak_picking, extract_peak_matrix
+from pymsix.processing.recalibration import recalibrate_imzml_file
 from pymsix.params.options import (
     MeanSpectrumOptions,
     GlobalMeanSpectrumOptions,
     PeakPickingOptions,
     PeakMatrixOptions,
+    RecalibrationOptions,
 )
 
 
@@ -39,6 +42,9 @@ class MSICube:
     Main object for Mass Spectrometry Imaging (MSI) analysis.
     Contains an anndata object for data and a mapping of raw files.
     """
+
+    data_directory: str
+    adata: Optional[ad.AnnData]
 
     def __init__(self, data_directory: str) -> None:
         """
@@ -476,3 +482,114 @@ class MSICube:
         return plot_mean_spectrum_windows(
             self, labels=labels, peak_mzs=peak_mzs, span_da=span_da, **kwargs
         )
+
+    def recalibration(
+        self,
+        database_mass_file: str,
+        options: Optional[RecalibrationOptions] = None,
+        output_directory: Optional[str] = None,
+    ) -> None:
+        """
+        Performs mass recalibration on all samples within the MSICube object
+        and writes the new calibrated imzML/ibd files to the output directory.
+        This process is executed in parallel for each sample.
+
+        :param database_mass_file: Path to the file containing exact calibration masses.
+        :param options: RecalibrationOptions object specifying hyperparameters.
+                        If None, uses default options.
+        :param output_directory: Directory to store the recalibrated files.
+                                 Defaults to creating a 'recal_imzML' subdirectory
+                                 in the original data location.
+        """
+        logger.info("Starting mass recalibration across all samples.")
+
+        if options is None:
+            options = RecalibrationOptions()
+
+        try:
+            options.validate()
+        except ValueError as e:
+            logger.error(f"Invalid Recalibration Options: {e}")
+            return
+
+        # 1. Parsing and preparing the mass database
+        try:
+            exact_mass_full = np.genfromtxt(database_mass_file)
+            # Must order the list of masses for the binary search
+            database_exactmass = exact_mass_full[exact_mass_full.argsort()]
+            logger.info(
+                f"Calibration database loaded ({len(database_exactmass)} masses)."
+            )
+        except Exception as e:
+            logger.error(f"Failed to load or sort the mass file: {e}")
+            return
+
+        # 2. Define output directory and create it
+        if output_directory is None:
+            output_directory = os.path.join(self.data_directory, "recal_imzML")
+
+        os.makedirs(output_directory, exist_ok=True)
+        logger.info(f"Recalibrated imzML files will be saved in: {output_directory}")
+
+        # 3. Parallel Execution Setup
+        max_workers = min(len(self.org_imzml_path_dict), os.cpu_count() or 4)
+        logger.info(f"Starting parallel recalibration using {max_workers} processes.")
+
+        results = []
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+
+            for sample_name, input_path in self.org_imzml_path_dict.items():
+                # Keep the original filename (e.g., pseudomonas.imzml)
+                imzml_filename = os.path.basename(input_path)
+                output_path = os.path.join(output_directory, imzml_filename)
+
+                # Submit task to the process pool
+                future = executor.submit(
+                    recalibrate_imzml_file,
+                    imzml_input_path=input_path,
+                    imzml_output_path=output_path,
+                    database_exactmass=database_exactmass,
+                    options=options,
+                )
+                futures.append((sample_name, future))
+
+            # Collect results as they complete
+            for sample_name, future in futures:
+                try:
+                    success = future.result()
+                    results.append((sample_name, success))
+                except Exception as exc:
+                    logger.error(f"Recalibration of {sample_name} failed: {exc}")
+                    results.append((sample_name, False))
+
+        # 4. Summary and MSICube Update
+        successful_recalibrations = [name for name, success in results if success]
+        failed_recalibrations = [name for name, success in results if not success]
+
+        if successful_recalibrations:
+            logger.info(
+                f"Recalibration successful for {len(successful_recalibrations)} samples."
+            )
+
+            # Update MSICube paths to point to the new calibrated files
+            new_org_imzml_path_dict = {}
+            for sample_name, input_path in self.org_imzml_path_dict.items():
+                if sample_name in successful_recalibrations:
+                    imzml_filename = os.path.basename(input_path)
+                    new_org_imzml_path_dict[sample_name] = os.path.join(
+                        output_directory, imzml_filename
+                    )
+                else:
+                    new_org_imzml_path_dict[sample_name] = (
+                        input_path  # Keep old path for failed/unprocessed samples
+                    )
+
+            self.org_imzml_path_dict = new_org_imzml_path_dict
+            self.data_directory = output_directory  # Update primary data directory
+            logger.info("MSICube sample paths updated to use the recalibrated files.")
+
+        if failed_recalibrations:
+            logger.error(
+                f"Recalibration failed for {len(failed_recalibrations)} samples: {', '.join(failed_recalibrations)}"
+            )
