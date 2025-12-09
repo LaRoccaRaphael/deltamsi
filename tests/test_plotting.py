@@ -52,7 +52,9 @@ def test_plot_mean_spectrum_windows_missing_sample(
 ) -> None:
     """Test that missing samples are skipped and warned, but plotting continues."""
     # We patch the core function to verify it receives only valid data
-    with patch("msix.plotting.spectrum._plot_mean_spectrum_windows_core") as mock_core:
+    with patch(
+        "pymsix.plotting.spectrum._plot_mean_spectrum_windows_core"
+    ) as mock_core:
         plot_mean_spectrum_windows(
             cube_with_spectra,
             labels=["sample_A", "missing_sample"],

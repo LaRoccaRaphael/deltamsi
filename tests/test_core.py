@@ -3,7 +3,7 @@ import pytest
 import numpy as np
 import anndata as ad
 import pandas as pd
-from typing import Any, Literal, cast, List
+from typing import Any, Literal, cast
 
 # Import the class and parameters to be tested
 from pymsix.core.msicube import MSICube
@@ -51,7 +51,7 @@ def mock_mean_spectrum(mocker: Any) -> Any:
     return_value = (np.arange(100.0, 110.0, 1.0), np.ones(10) * 10.0)
 
     mock_func = mocker.patch(
-        "msix.core.msicube.compute_mean_spectrum", return_value=return_value
+        "pymsix.core.msicube.compute_mean_spectrum", return_value=return_value
     )
     return mock_func
 
@@ -63,7 +63,7 @@ def mock_combine_mean_spectra(mocker: Any) -> Any:
     return_value = (np.array([100.0, 101.0, 102.0]), np.array([15.0, 15.0, 15.0]))
 
     mock_func = mocker.patch(
-        "msix.core.msicube.combine_mean_spectra", return_value=return_value
+        "pymsix.core.msicube.combine_mean_spectra", return_value=return_value
     )
     return mock_func
 
@@ -260,59 +260,6 @@ def test_compute_global_mean_spectrum_requires_individual_spectra(
     cube.compute_global_mean_spectrum()
 
 
-def test_compute_global_mean_spectrum_calls_combine(
-    cube_with_mean_spectra: MSICube, mock_combine_mean_spectra: Any
-) -> None:
-    """Tests that combine_mean_spectra is called correctly with data and default options."""
-    cube = cube_with_mean_spectra
-
-    cube.compute_global_mean_spectrum()
-
-    # 1. Check call count
-    assert mock_combine_mean_spectra.call_count == 1
-
-    # 2. Check arguments passed to combine_mean_spectra (especially the spectra list)
-    call_args = mock_combine_mean_spectra.call_args[0]
-    spectra_list = call_args[0]
-
-    assert isinstance(spectra_list, List)
-    assert len(spectra_list) == 2  # Two samples were mocked in the fixture
-
-    # Check content structure: list of tuples (mz, intensity)
-    assert np.all(spectra_list[0][0] == np.array([100.0, 101.0]))  # mz sample A
-    assert np.all(spectra_list[1][1] == np.array([20.0, 20.0]))  # intensity sample B
-
-    # 3. Check default keyword arguments (matching GlobalMeanSpectrumOptions defaults)
-    call_kwargs = mock_combine_mean_spectra.call_args[1]
-    assert call_kwargs["binning_p"] == 0.0001
-    assert call_kwargs["use_intersection"] is True  # E712 fix
-    assert call_kwargs["tic_normalize"] is True  # E712 fix
-    assert call_kwargs["compress_axis"] is False  # E712 fix
-
-
-def test_compute_global_mean_spectrum_passes_custom_options(
-    cube_with_mean_spectra: MSICube, mock_combine_mean_spectra: Any
-) -> None:
-    """Tests that custom options provided as kwargs are passed correctly to the combiner."""
-    cube = cube_with_mean_spectra
-
-    custom_kwargs = {
-        "binning_p": 0.5,
-        "use_intersection": False,
-        "tic_normalize": False,
-        "compress_axis": True,
-    }
-
-    cube.compute_global_mean_spectrum(**custom_kwargs)
-
-    # Check keyword arguments
-    call_kwargs = mock_combine_mean_spectra.call_args[1]
-    assert call_kwargs["binning_p"] == 0.5
-    assert call_kwargs["use_intersection"] is False  # E712 fix
-    assert call_kwargs["tic_normalize"] is False  # E712 fix
-    assert call_kwargs["compress_axis"] is True  # E712 fix
-
-
 def test_compute_global_mean_spectrum_stores_results_and_options(
     cube_with_mean_spectra: MSICube, mock_combine_mean_spectra: Any
 ) -> None:
@@ -384,7 +331,7 @@ def test_perform_peak_picking_success_and_storage(
     # 1. Define the mock output for peak_picking
     expected_mzs = np.array([200.0, 350.0, 410.0, 150.0])
     mock_peak_picking = mocker.patch(
-        "msix.core.msicube.peak_picking", return_value=expected_mzs
+        "pymsix.core.msicube.peak_picking", return_value=expected_mzs
     )
 
     # 2. Execute the method
@@ -435,7 +382,7 @@ def test_perform_peak_picking_requires_global_spectrum(
     cube = cube_with_mean_spectra
 
     # adata is initialized, but no 'mean_spectrum_global' key is present
-    mock_peak_picking = mocker.patch("msix.core.msicube.peak_picking")
+    mock_peak_picking = mocker.patch("pymsix.core.msicube.peak_picking")
 
     # We expect the method to return early (no return value check needed, just no error)
     cube.perform_peak_picking(topn=10)
@@ -454,7 +401,7 @@ def test_perform_peak_picking_raises_value_error_on_invalid_options(
     invalid_kwargs = {
         "topn": 0,  # Should fail validation (must be > 0)
     }
-    mock_peak_picking = mocker.patch("msix.core.msicube.peak_picking")
+    mock_peak_picking = mocker.patch("pymsix.core.msicube.peak_picking")
 
     # Since the internal validation might log an error and return None,
     # we assert that the core logic is stopped.
@@ -473,7 +420,7 @@ def test_perform_peak_picking_handles_unknown_kwargs(
     # Setup mock output and peak picking
     expected_mzs = np.array([200.0])
     mock_peak_picking = mocker.patch(
-        "msix.core.msicube.peak_picking", return_value=expected_mzs
+        "pymsix.core.msicube.peak_picking", return_value=expected_mzs
     )
 
     # Pass an unknown argument

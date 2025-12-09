@@ -3,43 +3,35 @@ name = "pymsix"
 version = "0.1.0"
 description = "A Scanpy-like package for High-Resolution Mass Spectrometry Imaging (MSI)."
 authors = [
-    {name = "Raphael La Rocca",email = "raphaellarocca0594@gmail.com"},
-    {name = "Lionel La Rocca",email = "lionel.larocca@proton.me"}
+    { name = "Raphael La Rocca", email = "raphaellarocca0594@gmail.com" },
+    { name = "Lionel La Rocca", email = "lionel.larocca@proton.me" },
 ]
-readme = "README.md"
 requires-python = ">=3.11,<3.13"
-license = {text = "MIT"}
-
+readme = "README.md"
+license = { text = "MIT" }
 dependencies = [
-    # Core Data & I/O
     "numpy>=1.24",
     "pandas>=2.2",
     "scipy>=1.11",
     "anndata>=0.10",
     "pyimzML>=1.5.4",
-
-    # Large Data Handling & Parallelization
     "numcodecs>=0.12",
     "zstandard",
     "blosc",
     "dask>=2024.4.0",
     "distributed>=2024.4.0",
     "xarray>=2024.3.0",
-
-    # Utilities
     "tqdm>=4.66",
     "rich>=13.7",
 ]
 
 [project.optional-dependencies]
-
 analysis = [
     "scikit-learn>=1.4",
     "python-igraph",
     "leidenalg",
     "networkx>=3.2",
 ]
-
 viz = [
     "matplotlib>=3.8",
     "seaborn",
@@ -52,11 +44,7 @@ viz = [
     "pyarrow>=15",
     "fastparquet",
 ]
-
-cli = [
-    "typer>=0.12",
-]
-
+cli = ["typer>=0.12"]
 dev = [
     "pytest",
     "pytest-cov",
@@ -68,9 +56,15 @@ dev = [
     "pandas-stubs",
 ]
 
-[tool.poetry]
-packages = [{include = "pymsix", from = "src"}]
+[tool.hatch.build.targets.sdist]
+include = ["src/pymsix"]
+
+[tool.hatch.build.targets.wheel]
+include = ["src/pymsix"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src/pymsix" = "pymsix"
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
