@@ -39,127 +39,104 @@ def _plot_mean_spectrum_windows_core(
     if labels is not None and len(labels) != n_specs:
         raise ValueError("labels must have same length as mean_spectra.")
 
-    # Use the array for array operations
-    n_peaks = len(peak_mzs_arr)
-    nrows = int(np.ceil(n_peaks / ncols))
+    n_windows = len(peak_mzs_arr)
+    nrows = int(np.ceil(n_windows / ncols))
 
     if figsize is None:
         figsize = (4 * ncols, 3 * nrows)
 
     fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False)
-    axes_flat = axes.flatten()
+    axes = axes.flatten()
 
-    for ax_idx, (ax, mz0) in enumerate(zip(axes_flat, peak_mzs_arr)):
-        x_min = mz0 - span_da
-        x_max = mz0 + span_da
+    for i in range(n_windows):
+        ax = axes[i]
+        peak_mz = peak_mzs_arr[i]
 
-        # Track y-range across all spectra in this window
-        local_ymax = 0.0
-
-        # Plot all mean spectra in this window
-        for spec_idx, (mzs, ints) in enumerate(mean_spectra):
-            mzs = np.asarray(mzs, dtype=float)
-            ints = np.asarray(ints, dtype=float)
-            if mzs.shape != ints.shape:
-                raise ValueError("Each (mzs, intensities) pair must have same shape.")
-
-            mask = (mzs >= x_min) & (mzs <= x_max)
-            if not np.any(mask):
-                continue
-
-            mz_win = mzs[mask]
-            int_win = ints[mask]
-
-            local_ymax = max(local_ymax, float(int_win.max()) if int_win.size else 0.0)
-
-            if labels is not None:
-                label = labels[spec_idx]
-            else:
-                label = None
-
-            ax.plot(mz_win, int_win, label=label)
-
-        # If nothing was plotted in this window
-        if local_ymax == 0.0:
-            ax.set_title(f"{mz0:.4f} m/z (no data)")
-            ax.set_xlim(x_min, x_max)
-            ax.set_ylim(0, 1)
-            ax.set_xlabel("m/z")
-            ax.set_ylabel("Intensity")
-            continue
-
-        # Tolerance in Da around mz0
+        # Déterminer la tolérance pour la ligne pointillée (Da)
+        # Si tol_ppm est défini, il est prioritaire
         if tol_ppm is not None:
-            tol_cur_da = mz0 * tol_ppm * 1e-6
+            tol_da_for_peak = peak_mz * tol_ppm * 1e-6
+        elif tol_da is not None:
+            tol_da_for_peak = tol_da
         else:
-            # Use tol_da, defaulting to 0.0 if not set (though error handling prevents this path)
-            tol_cur_da = tol_da
+            tol_da_for_peak = 0.0  # Ne devrait pas arriver
 
-        # Vertical dashed lines at mz0 ± tolerance
+        # Définir les limites de la fenêtre
+        mz_min = peak_mz - span_da / 2
+        mz_max = peak_mz + span_da / 2
+
+        # Tracer chaque spectre moyen dans cette fenêtre
+        for j, (mzs, intensities) in enumerate(mean_spectra):
+            # Filtrer les données dans la fenêtre
+            mask = (mzs >= mz_min) & (mzs <= mz_max)
+            mzs_window = mzs[mask]
+            intensities_window = intensities[mask]
+
+            # Obtenir le label (si disponible)
+            label = labels[j] if labels is not None else f"Spectrum {j+1}"
+
+            # Tracer la trace
+            ax.plot(mzs_window, intensities_window, label=label)
+
+        # Ajouter la ligne centrale (m/z cible)
         ax.axvline(
-            mz0 - tol_cur_da, linestyle="--", color="red", linewidth=1, alpha=0.5
-        )
-        ax.axvline(
-            mz0 + tol_cur_da, linestyle="--", color="red", linewidth=1, alpha=0.5
+            peak_mz, color="red", linestyle="--", linewidth=1, label="Target m/z"
         )
 
-        # Red vertical solid lines for all peaks in peak_mzs_arr that fall in the window
-        # (To see neighboring peaks)
-        in_window = (peak_mzs_arr >= x_min) & (peak_mzs_arr <= x_max)
-        for mz_peak in peak_mzs_arr[in_window]:
-            ax.axvline(mz_peak, color="red", linewidth=1, linestyle="-", alpha=0.6)
+        # Ajouter les lignes de tolérance (tol_da_for_peak)
+        if tol_da_for_peak > 0:
+            ax.axvline(
+                peak_mz - tol_da_for_peak,
+                color="gray",
+                linestyle=":",
+                linewidth=0.8,
+                label=f"Tol (+/-{tol_da_for_peak:.4f} Da)",
+            )
+            ax.axvline(
+                peak_mz + tol_da_for_peak, color="gray", linestyle=":", linewidth=0.8
+            )
 
-        ax.set_xlim(x_min, x_max)
-        ax.set_ylim(0, local_ymax * 1.05)
+        # Mise en forme du subplot
+        ax.set_xlim(mz_min, mz_max)
+        ax.set_title(f"Window around m/z {peak_mz:.4f}", fontsize=10)
         ax.set_xlabel("m/z")
-        ax.set_ylabel("Intensity")
-        title_tol = f"tol ≈ {tol_cur_da:.4g} Da"
-        ax.set_title(f"{mz0:.4f} m/z\nspan ±{span_da:.3f} Da | {title_tol}")
+        ax.tick_params(axis="x", rotation=45)
 
-        if labels is not None:
-            ax.legend(fontsize="x-small")
+        # Ajouter la légende si plusieurs spectres sont tracés
+        if n_specs > 1:
+            ax.legend(fontsize=8, loc="upper right")
 
-    # Hide unused axes
-    for ax in axes_flat[n_peaks:]:
-        ax.axis("off")
+    # Masquer les axes non utilisés
+    for j in range(n_windows, nrows * ncols):
+        fig.delaxes(axes[j])
 
-    fig.tight_layout()
-    plt.show()
+    fig.tight_layout(rect=[0, 0, 1, 0.98])
 
 
 def plot_mean_spectrum_windows(
     msicube: "MSICube",
-    labels: Sequence[str],
     peak_mzs: Sequence[float],
-    span_da: float = 0.1,
-    *,
+    labels: Optional[Sequence[str]] = None,
+    span_da: float = 1.0,
     tol_da: Optional[float] = None,
     tol_ppm: Optional[float] = None,
     ncols: int = 3,
     figsize: Optional[Tuple[float, float]] = None,
 ) -> None:
     """
-    High-level API to plot zoomed windows of mean spectra for specific samples
-    stored in an MSICube.
+    Plots zoomed windows around specified m/z peaks from one or more mean spectra.
 
-    Parameters
-    ----------
-    msicube : MSICube
-        Initialized MSICube containing mean spectra in adata.uns['mean_spectra'].
-    labels : sequence of str
-        List of sample names to plot (keys in adata.uns['mean_spectra']).
-    peak_mzs : sequence of float
-        List of target m/z values to center the windows on.
-    span_da : float
-        Half-width of the zoom window in Da.
-    tol_da : float, optional
-        Tolerance in Da to show dashed lines.
-    tol_ppm : float, optional
-        Tolerance in ppm to show dashed lines.
-    ncols : int
-        Number of columns in subplot grid.
-    figsize : tuple, optional
-        Figure size.
+    Args:
+        msicube: The MSICube object containing mean spectra in adata.uns['mean_spectra'].
+        peak_mzs: Sequence of m/z values to center the plots around.
+        labels: Names of the samples (as found in adata.obs['sample']) to plot.
+                If None, all mean spectra found in adata.uns['mean_spectra'] are plotted.
+                (Note: Cette implémentation ne supporte pas 'None' pour les labels).
+        span_da: Total width of the m/z window in Dalton (Da).
+        tol_da: Tolerance in Dalton (Da) to show dashed lines.
+        tol_ppm: Tolerance in ppm to show dashed lines.
+        ncols: Number of columns in subplot grid.
+        figsize: Figure size.
     """
     if msicube.adata is None:
         raise ValueError("MSICube.adata is None.")
@@ -173,6 +150,10 @@ def plot_mean_spectrum_windows(
     mean_spectra_storage = msicube.adata.uns["mean_spectra"]
     spectra_list: List[Tuple[np.ndarray, np.ndarray]] = []
     found_labels: List[str] = []
+
+    # Si labels est None, on prend TOUS les labels disponibles.
+    if labels is None:
+        labels = list(mean_spectra_storage.keys())
 
     for label in labels:
         if label not in mean_spectra_storage:
@@ -191,7 +172,7 @@ def plot_mean_spectrum_windows(
     if not spectra_list:
         raise ValueError("No valid samples found to plot.")
 
-    # Call the core plotting function
+    # Appel de la fonction core
     _plot_mean_spectrum_windows_core(
         mean_spectra=spectra_list,
         peak_mzs=peak_mzs,
@@ -199,6 +180,6 @@ def plot_mean_spectrum_windows(
         tol_da=tol_da,
         tol_ppm=tol_ppm,
         ncols=ncols,
-        labels=found_labels,
+        labels=found_labels,  # PASSAGE DES LABELS POUR LA LÉGENDE
         figsize=figsize,
     )

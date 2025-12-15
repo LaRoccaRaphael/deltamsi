@@ -186,28 +186,45 @@ class RecalibrationOptions:
     Options for performing mass spectrometry imaging (MSI) recalibration
     using a mass database and the RANSAC algorithm.
 
-    Attributes:
-        step: Bandwidth for the Kernel Density Estimation (KDE) function
-              used in hit selection (e.g., 0.0005 Da).
-        tol: Dalton tolerance for identifying calibration hits (e.g., 0.01 Da).
-        dalim: Limit in Dalton (Da) around the maximum KDE peak for selecting
-               the final hits for RANSAC fitting (e.g., 0.002 Da).
-        npeak: Number of top intense peaks per spectrum to use for
-               the calibration hit search (e.g., 300).
+    Attributes (matching recalibration_core.RecalParams):
+        tol_da: Dalton tolerance for identifying calibration hits (e.g., 0.03 Da).
+        tol_ppm: Matching tolerance in ppm. If provided, overrides tol_da for per-peak tolerance calculation.
+        kde_bw_da: Bandwidth for the Kernel Density Estimation (KDE) function (e.g., 0.002 Da).
+        roi_halfwidth_da: ROI half-width around the error mode (e.g., 0.02 Da).
+        n_peaks: Number of top intense peaks per spectrum to use for hit search (e.g., 1000).
+        min_hits_for_fit: Minimum number of hits (after ROI) needed to fit the RANSAC model (e.g., 20).
     """
 
-    step: float = 0.0005
-    tol: float = 0.01
-    dalim: float = 0.002
-    npeak: int = 300
+    # Matching tolerance (one must be provided)
+    tol_da: float = 0.03
+    tol_ppm: Optional[float] = None
+
+    # KDE / ROI (in Da)
+    kde_bw_da: float = 0.002
+    roi_halfwidth_da: float = 0.02
+
+    # Peak selection + fit
+    n_peaks: int = 1000
+    min_hits_for_fit: int = 20
 
     def validate(self) -> None:
-        if self.step <= 0:
-            raise ValueError("step (KDE bandwidth) must be strictly positive.")
-        if self.tol <= 0:
-            raise ValueError("tol (Da tolerance) must be strictly positive.")
-        if self.dalim <= 0:
-            raise ValueError("dalim (Da limit) must be strictly positive.")
-        if self.npeak <= 0:
-            # Note: Cast to int is not necessary here as it is already typed as int
-            raise ValueError("npeak (number of peaks) must be a positive integer.")
+        """Validate the recalibration parameters."""
+        has_da = self.tol_da is not None and self.tol_da > 0
+        has_ppm = self.tol_ppm is not None and self.tol_ppm > 0
+
+        # Check that at least one tolerance is valid
+        if not (has_da or has_ppm):
+            raise ValueError(
+                "Provide at least one positive tolerance: 'tol_da' (Da) or 'tol_ppm' (ppm)."
+            )
+
+        if self.kde_bw_da <= 0:
+            raise ValueError("kde_bw_da (KDE bandwidth) must be strictly positive.")
+        if self.roi_halfwidth_da <= 0:
+            raise ValueError(
+                "roi_halfwidth_da (ROI half-width) must be strictly positive."
+            )
+        if self.n_peaks <= 0:
+            raise ValueError("n_peaks (number of peaks) must be a positive integer.")
+        if self.min_hits_for_fit <= 0:
+            raise ValueError("min_hits_for_fit must be a positive integer.")

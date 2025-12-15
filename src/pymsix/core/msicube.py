@@ -6,14 +6,26 @@ import re
 import anndata as ad
 import numpy as np
 import pandas as pd
-from typing import Optional, Dict, Any, List, Literal, Sequence
+from typing import Optional, Dict, Any, List, Literal, Sequence, Tuple
+
+import matplotlib.pyplot as plt
+from pyimzml.ImzMLParser import ImzMLParser
 
 from pymsix.plotting.ion_images import plot_ion_images
 from pymsix.plotting.spectrum import plot_mean_spectrum_windows
 from pymsix.processing.mean_spectrum import compute_mean_spectrum
 from pymsix.processing.combine_mean_spectra import combine_mean_spectra, Spectrum
 from pymsix.processing.peak_picking import peak_picking, extract_peak_matrix
-from pymsix.processing.recalibration_DEPRECATED import recalibrate_imzml_file
+
+from pymsix.processing.recalibration_core import (
+    load_database_masses,
+    RecalParams,
+)
+
+from pymsix.processing.recalibration_cli_clean import write_corrected_msi
+from pymsix.processing.recal_visu_clean import diagnostics_for_pixel, select_pixels
+
+
 from pymsix.params.options import (
     MeanSpectrumOptions,
     GlobalMeanSpectrumOptions,
@@ -62,7 +74,7 @@ class MSICube:
 
         # 2. Initialization of an empty anndata object
         # The anndata object will be filled later; we initialize the slot now.
-        self.adata: Optional[ad.AnnData] = None
+        self.adata = None
 
         logger.info(
             f"MSICube initialized with {len(self.org_imzml_path_dict)} samples found."
@@ -442,7 +454,13 @@ class MSICube:
             f"Data stored in adata.X, adata.obsm['spatial'], adata.obs['sample']."
         )
 
-    def plot_ion_images(self, sample_name: str, **kwargs: Any) -> None:
+    def plot_ion_images(
+        self,
+        mz_list: Sequence[float],
+        sample_name: Optional[str] = None,
+        mode: Literal["by_sample", "by_condition"] = "by_sample",  # NOUVEL ARGUMENT
+        **kwargs: Any,
+    ) -> None:
         """
         Plots ion images for a specific sample.
 
@@ -455,13 +473,27 @@ class MSICube:
         **kwargs
             Arguments passed to the plotting function (e.g., mz_list, ncols, cmap, vmin, vmax).
         """
-        return plot_ion_images(self, sample_name=sample_name, **kwargs)
+        # Supprimer 'var_indices' si l'utilisateur l'a mis dans kwargs
+        if "var_indices" in kwargs:
+            logger.warning(
+                "Ignoring 'var_indices' in kwargs. MSICube.plot_ion_images only uses 'mz_list'."
+            )
+            del kwargs["var_indices"]
+
+        # Appel à la fonction externe plot_ion_images
+        # Nous transmettons tous les arguments de manière explicite.
+        plot_ion_images(
+            self,
+            sample_name=sample_name,
+            mode=mode,
+            mz_list=mz_list,  # Transmis en mot-clé pour éviter toute confusion positionnelle
+            **kwargs,
+        )
 
     def plot_mean_spectrum_windows(
         self,
-        labels: Sequence[str],
         peak_mzs: Sequence[float],
-        span_da: float = 0.1,
+        labels: Optional[Sequence[str]] = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -481,89 +513,88 @@ class MSICube:
         **kwargs
             Arguments passed to the plotting function (e.g., tol_da, tol_ppm, ncols, figsize).
         """
-        return plot_mean_spectrum_windows(
-            self, labels=labels, peak_mzs=peak_mzs, span_da=span_da, **kwargs
-        )
+        plot_mean_spectrum_windows(self, peak_mzs, labels, **kwargs)
 
     def recalibration(
         self,
         database_mass_file: str,
-        options: Optional[RecalibrationOptions] = None,
+        options: RecalibrationOptions,
         output_directory: Optional[str] = None,
+        n_workers: int = 1,
     ) -> None:
         """
-        Performs mass recalibration on all samples within the MSICube object
-        and writes the new calibrated imzML/ibd files to the output directory.
-        This process is executed in parallel for each sample.
+        Performs mass recalibration on all raw imzML files using a mass database.
 
-        :param database_mass_file: Path to the file containing exact calibration masses.
-        :param options: RecalibrationOptions object specifying hyperparameters.
-                        If None, uses default options.
-        :param output_directory: Directory to store the recalibrated files.
-                                 Defaults to creating a 'recal_imzML' subdirectory
-                                 in the original data location.
+        The method updates the MSICube object to point to the new recalibrated files.
         """
-        logger.info("Starting mass recalibration across all samples.")
-
-        if options is None:
-            options = RecalibrationOptions()
-
-        try:
-            options.validate()
-        except ValueError as e:
-            logger.error(f"Invalid Recalibration Options: {e}")
+        if not self.org_imzml_path_dict:
+            logger.error("No imzML files loaded for recalibration.")
             return
 
-        # 1. Parsing and preparing the mass database
+        # 1. Préparation de la base de données et des paramètres
         try:
-            exact_mass_full = np.genfromtxt(database_mass_file)
-            # Must order the list of masses for the binary search
-            database_exactmass = exact_mass_full[exact_mass_full.argsort()]
-            logger.info(
-                f"Calibration database loaded ({len(database_exactmass)} masses)."
-            )
+            db_masses_sorted = load_database_masses(database_mass_file)
         except Exception as e:
-            logger.error(f"Failed to load or sort the mass file: {e}")
+            logger.error(
+                f"Failed to load database masses from {database_mass_file}: {e}"
+            )
             return
 
-        # 2. Define output directory and create it
+        # Convertir RecalibrationOptions en RecalParams pour le core
+        recal_params = RecalParams(
+            tol_da=options.tol_da,  # Utilisation de l'ancienne tol pour tol_da par défaut
+            kde_bw_da=options.kde_bw_da,
+            roi_halfwidth_da=options.roi_halfwidth_da,
+            n_peaks=options.n_peaks,
+            # Le reste des options RANSAC est laissé par défaut ou doit être ajouté à RecalibrationOptions
+        )
+
+        # Définition du répertoire de sortie
         if output_directory is None:
-            output_directory = os.path.join(self.data_directory, "recal_imzML")
-
+            output_directory = os.path.join(self.data_directory, "recalibrated_data")
         os.makedirs(output_directory, exist_ok=True)
-        logger.info(f"Recalibrated imzML files will be saved in: {output_directory}")
 
-        # 3. Parallel Execution Setup
-        max_workers = min(len(self.org_imzml_path_dict), os.cpu_count() or 4)
-        logger.info(f"Starting parallel recalibration using {max_workers} processes.")
+        logger.info(
+            f"Starting recalibration for {len(self.org_imzml_path_dict)} samples..."
+        )
+        logger.info(f"Output files will be saved in: {output_directory}")
 
-        results = []
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            futures = []
+        # 2. Fonction de travail pour l'exécution parallèle
+        def _recalibrate_one_sample(
+            sample_name: str, input_path: str
+        ) -> Tuple[str, bool]:
+            imzml_filename = os.path.basename(input_path)
+            output_path = os.path.join(output_directory, imzml_filename)
 
-            for sample_name, input_path in self.org_imzml_path_dict.items():
-                # Keep the original filename (e.g., pseudomonas.imzml)
-                imzml_filename = os.path.basename(input_path)
-                output_path = os.path.join(output_directory, imzml_filename)
-
-                # Submit task to the process pool
-                future = executor.submit(
-                    recalibrate_imzml_file,
-                    imzml_input_path=input_path,
-                    imzml_output_path=output_path,
-                    database_exactmass=database_exactmass,
-                    options=options,
+            try:
+                write_corrected_msi(
+                    imzml_path=input_path,
+                    out_imzml_path=output_path,
+                    db_masses_sorted=db_masses_sorted,
+                    params=recal_params,
                 )
-                futures.append((sample_name, future))
+                logger.info(f"Recalibration successful for {sample_name}.")
+                return sample_name, True
+            except Exception as e:
+                logger.error(
+                    f"Recalibration failed for sample {sample_name} ({input_path}): {e}"
+                )
+                return sample_name, False
 
-            # Collect results as they complete
-            for sample_name, future in futures:
-                try:
-                    success = future.result()
-                    results.append((sample_name, success))
-                except Exception as exc:
-                    logger.error(f"Recalibration of {sample_name} failed: {exc}")
-                    results.append((sample_name, False))
+        # 3. Exécution (parallèle si n_workers > 1)
+        tasks = [(name, path) for name, path in self.org_imzml_path_dict.items()]
+
+        results: List[Tuple[str, bool]] = []
+        if n_workers > 1 and len(tasks) > 1:
+            with ProcessPoolExecutor(max_workers=n_workers) as executor:
+                futures = [
+                    executor.submit(_recalibrate_one_sample, name, path)
+                    for name, path in tasks
+                ]
+                results = [f.result() for f in futures]
+        else:
+            for name, path in tasks:
+                results.append(_recalibrate_one_sample(name, path))
 
         # 4. Summary and MSICube Update
         successful_recalibrations = [name for name, success in results if success]
@@ -595,3 +626,79 @@ class MSICube:
             logger.error(
                 f"Recalibration failed for {len(failed_recalibrations)} samples: {', '.join(failed_recalibrations)}"
             )
+
+    # --- MÉTHODE DE VISUALISATION DE LA RECALIBRATION ---
+
+    def plot_recalibration_diagnostics(
+        self,
+        sample_name: str,
+        database_mass_file: str,
+        options: RecalibrationOptions,
+        pixel_idx: Optional[Sequence[int]] = None,
+        pixel_coord: Optional[Sequence[str]] = None,
+        n_random: Optional[int] = None,
+        seed: int = 42,
+    ) -> None:
+        """
+        Plots the recalibration diagnostics (KDE, RANSAC fit) for selected pixels
+        of a specific MSI cube.
+
+        Args:
+            sample_name: The name of the sample (MSI cube) to plot.
+            database_mass_file: Path to the exact mass list (calibrants.txt).
+            options: RecalibrationOptions (used to build RecalParams).
+            pixel_idx: Specific 1D pixel indices to plot.
+            pixel_coord: Specific (x,y) or (x,y,z) coordinates to plot (e.g., '10,20').
+            n_random: Number of random pixels to plot.
+            seed: Seed for random selection.
+        """
+        if sample_name not in self.org_imzml_path_dict:
+            available = list(self.org_imzml_path_dict.keys())
+            logger.error(
+                f"Sample '{sample_name}' not found. Available samples: {available}"
+            )
+            return
+
+        imzml_path = self.org_imzml_path_dict[sample_name]
+
+        # Convertir RecalibrationOptions en RecalParams
+        params = RecalParams(
+            tol_da=options.tol_da,
+            kde_bw_da=options.kde_bw_da,
+            roi_halfwidth_da=options.roi_halfwidth_da,
+            n_peaks=options.n_peaks,
+        )
+
+        try:
+            db = load_database_masses(database_mass_file)
+            p = ImzMLParser(imzml_path, parse_lib="ElementTree")
+
+            # 1. Sélection des pixels
+            pixels_to_plot = select_pixels(
+                p,
+                pixel_idx=pixel_idx,
+                pixel_coord=pixel_coord,
+                n_random=n_random,
+                seed=seed,
+            )
+
+            if not pixels_to_plot:
+                logger.warning("No pixels selected for plotting.")
+                return
+
+            # 2. Création et affichage des figures
+            for idx in pixels_to_plot:
+                # diagnostics_for_pixel retourne une figure
+                fig = diagnostics_for_pixel(p, idx, db, params)
+                fig.suptitle(
+                    f"Sample: {sample_name} | Pixel Index: {idx} | Coordinates: {p.coordinates[idx]}",
+                    fontsize=16,
+                )
+
+            plt.show()
+
+        except Exception as e:
+            logger.error(
+                f"Error during recalibration diagnostics plotting for {sample_name}: {e}"
+            )
+            return

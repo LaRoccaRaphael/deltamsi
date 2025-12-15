@@ -80,7 +80,7 @@ input/
 # Emacs/Vim temporary files
 *~
 #*#
-local_test/check_msix.py
+local_test
 utils/recalibration_cli_clean.py
 utils/recalibration_core.py
 utils/recalibration_cli_clean.py
