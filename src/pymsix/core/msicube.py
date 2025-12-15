@@ -13,7 +13,7 @@ from pymsix.plotting.spectrum import plot_mean_spectrum_windows
 from pymsix.processing.mean_spectrum import compute_mean_spectrum
 from pymsix.processing.combine_mean_spectra import combine_mean_spectra, Spectrum
 from pymsix.processing.peak_picking import peak_picking, extract_peak_matrix
-from pymsix.processing.recalibration import recalibrate_imzml_file
+from pymsix.processing.recalibration_DEPRECATED import recalibrate_imzml_file
 from pymsix.params.options import (
     MeanSpectrumOptions,
     GlobalMeanSpectrumOptions,
@@ -54,6 +54,8 @@ class MSICube:
         """
         if not os.path.isdir(data_directory):
             raise FileNotFoundError(f"The directory does not exist: {data_directory}")
+
+        self.data_directory = data_directory
 
         self.org_imzml_path_dict: Dict[str, str] = {}
         self._scan_imzml_files(data_directory)
