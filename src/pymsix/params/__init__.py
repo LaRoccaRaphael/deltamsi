@@ -4,6 +4,8 @@ from .options import (
     PeakPickingOptions,
     PeakMatrixOptions,
     RecalibrationOptions,
+    MassClusteringOptions,
+    KendrickPlotOptions,
 )
 
 __all__ = [
@@ -12,4 +14,6 @@ __all__ = [
     "PeakPickingOptions",
     "PeakMatrixOptions",
     "RecalibrationOptions",
+    "MassClusteringOptions",
+    "KendrickPlotOptions",
 ]

@@ -19,12 +19,12 @@ import numpy as np
 from pyimzml.ImzMLParser import ImzMLParser
 from pyimzml.ImzMLWriter import ImzMLWriter
 
-from recalibration_core import (
+from pymsix.processing.recalibration_core import (
     RecalParams,
     load_database_masses,
     select_top_peaks,
     generate_hits,
-    effective_grid_halfwidth_da,
+    kde_grid_halfwidth_da,
     estimate_error_mode,
     select_hits_roi,
     fit_ransac_linear_model,
@@ -56,9 +56,12 @@ def write_corrected_msi(
             if hit_err.size < 10:
                 continue
 
-            grid_hw = effective_grid_halfwidth_da(peaks_mz, params)
+            grid_hw = kde_grid_halfwidth_da(peaks_mz, params)
             mode, _, _ = estimate_error_mode(
-                hit_err, grid_halfwidth_da=grid_hw, kde_bw_da=params.kde_bw_da
+                hit_err,
+                grid_halfwidth_da=grid_hw,
+                grid_step_da=params.kde_grid_step_da,
+                kde_bw_da=params.kde_bw_da,
             )
             if not np.isfinite(mode):
                 continue

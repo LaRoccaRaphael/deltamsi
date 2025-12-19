@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from pyimzml.ImzMLParser import ImzMLParser
 
-from recalibration_core import (
+from pymsix.processing.recalibration_core import (
     RecalParams,
     load_database_masses,
     select_top_peaks,

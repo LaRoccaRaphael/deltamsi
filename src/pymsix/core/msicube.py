@@ -6,7 +6,7 @@ import re
 import anndata as ad
 import numpy as np
 import pandas as pd
-from typing import Optional, Dict, Any, List, Literal, Sequence, Tuple
+from typing import Optional, Dict, Any, List, Literal, Sequence, Tuple, Union
 
 import matplotlib.pyplot as plt
 from pyimzml.ImzMLParser import ImzMLParser
@@ -25,6 +25,8 @@ from pymsix.processing.recalibration_core import (
 from pymsix.processing.recalibration_cli_clean import write_corrected_msi
 from pymsix.processing.recal_visu_clean import diagnostics_for_pixel, select_pixels
 
+from pymsix.processing.mass_clustering import cluster_masses_with_candidates
+from pymsix.plotting.plot_kendrick_cluster_mz import plot_kendrick_from_clustering
 
 from pymsix.params.options import (
     MeanSpectrumOptions,
@@ -32,6 +34,8 @@ from pymsix.params.options import (
     PeakPickingOptions,
     PeakMatrixOptions,
     RecalibrationOptions,
+    MassClusteringOptions,
+    KendrickPlotOptions,
 )
 
 
@@ -627,8 +631,6 @@ class MSICube:
                 f"Recalibration failed for {len(failed_recalibrations)} samples: {', '.join(failed_recalibrations)}"
             )
 
-    # --- MÉTHODE DE VISUALISATION DE LA RECALIBRATION ---
-
     def plot_recalibration_diagnostics(
         self,
         sample_name: str,
@@ -702,3 +704,147 @@ class MSICube:
                 f"Error during recalibration diagnostics plotting for {sample_name}: {e}"
             )
             return
+
+    def cluster_masses(
+        self,
+        candidates_df: pd.DataFrame,
+        options: Optional[MassClusteringOptions] = None,
+        keep_mask: Optional[np.ndarray] = None,
+    ) -> None:
+        """
+        Regroupe les pics (m/z) stockés dans adata.var en clusters de familles chimiques.
+
+        Args:
+            candidates_df: DataFrame contenant les deltas de masse (ex: delta_da, score, label).
+            options: Instance de MassClusteringOptions pour configurer le graphe et Leiden.
+            keep_mask: Matrice optionnelle pour filtrer les arêtes autorisées.
+        """
+        if self.adata is None:
+            raise ValueError(
+                "L'objet AnnData est vide. Exécutez le peak picking au préalable."
+            )
+
+        # 1. Préparation des options
+        opts = options or MassClusteringOptions()
+        opts.validate()
+
+        # 2. Récupération des masses (pics)
+        # On utilise les m/z identifiés lors de la phase de peak picking
+        if "m/z" not in self.adata.var:
+            raise ValueError(
+                "La colonne 'm/z' est absente de adata.var. Peak picking requis."
+            )
+
+        masses = self.adata.var["m/z"].values
+
+        logger.info(
+            f"Démarrage du clustering sur {len(masses)} masses (Resolution: {opts.resolution})..."
+        )
+
+        # 3. Appel de la fonction de traitement
+        res = cluster_masses_with_candidates(
+            masses=masses,
+            candidates_df=candidates_df,
+            delta_col=opts.delta_col,
+            score_col=opts.score_col,
+            label_col=opts.label_col,
+            tol=opts.get_tol_param(),
+            edge_max_delta_m=opts.edge_max_delta_m,
+            keep_mask=keep_mask,
+            resolution=opts.resolution,
+            weight_transform=opts.weight_transform,
+            weight_kwargs=opts.weight_kwargs,
+            knn_k=opts.knn_k,
+            knn_mode=opts.knn_mode,
+            return_graph=opts.return_graph,
+        )
+
+        # 4. Stockage des résultats
+        # Les labels de clusters (ex: 0, 1, 2... et -1 pour les bruits) vont dans var
+        self.adata.var["mass_cluster"] = res["labels"]
+
+        # Les statistiques et les arêtes vont dans uns
+        self.adata.uns["mass_clustering"] = {
+            "n_clusters": res["n_clusters"],
+            "n_minus1": res["n_minus1"],
+            "compression": res["compression"],
+            "edges": res["edges"],
+            "options": opts,  # On garde les options pour la traçabilité
+        }
+
+        # Si l'utilisateur a demandé le graphe igraph, on le stocke aussi
+        if opts.return_graph and "graph" in res:
+            self.adata.uns["mass_clustering"]["graph"] = res["graph"]
+
+        logger.info(f"Clustering terminé: {res['n_clusters']} clusters trouvés.")
+
+    def plot_kendrick(
+        self, options: Optional[KendrickPlotOptions] = None, **kwargs: Any
+    ) -> Tuple[plt.Figure, Union[List[plt.Axes], plt.Axes], pd.DataFrame]:
+        """
+        Génère un diagramme de Kendrick (KMD) à partir des résultats de clustering.
+
+        Args:
+            options: Une instance de KendrickPlotOptions. Si None, les valeurs par défaut sont utilisées.
+            **kwargs: Permet de surcharger des options spécifiques (ex: base="H2O").
+
+        Returns:
+            Un tuple (Figure, Axes, DataFrame utilisé).
+        """
+        # 1. Préparation des options
+        if options is None:
+            options = KendrickPlotOptions()
+
+        # Surcharge éventuelle via kwargs pour modifier les attributs de la dataclass
+        for key, value in kwargs.items():
+            if hasattr(options, key):
+                setattr(options, key, value)
+
+        options.validate()
+
+        # 2. Récupération des données depuis AnnData
+        if self.adata is None:
+            raise ValueError("L'objet AnnData est vide.")
+
+        if "mass_cluster" not in self.adata.var:
+            raise ValueError(
+                "Aucun résultat de clustering trouvé dans adata.var. "
+                "Veuillez exécuter 'cluster_masses()' au préalable."
+            )
+
+        # Récupération des masses (m/z)
+        masses = self.adata.var["m/z"].values
+
+        # Reconstruction du dictionnaire clustering_result attendu par la fonction de plot
+        clustering_result = {"labels": self.adata.var["mass_cluster"].values}
+
+        # Récupération optionnelle de la famille/composition
+        family = None
+        if "family" in self.adata.var.columns:
+            family = self.adata.var["family"].values
+        elif "label" in self.adata.var.columns:
+            family = self.adata.var["label"].values
+
+        # 3. Appel de la fonction de rendu fournie
+
+        return plot_kendrick_from_clustering(
+            masses=masses,
+            clustering_result=clustering_result,
+            family=family,
+            base=options.base,
+            mass_col="m/z",  # Nom utilisé dans le DataFrame interne pour les axes
+            x_axis=options.x_axis,
+            kmd_mode=options.kmd_mode,
+            point_size=options.point_size,
+            alpha=options.alpha,
+            hgrid_step=options.hgrid_step,
+            jitter=options.jitter,
+            annotate=options.annotate,
+            max_ann_per_group=options.max_ann_per_group,
+            top_k_clusters=options.top_k_clusters,
+            selected_clusters=options.selected_clusters,
+            include_minus1_in_top=options.include_minus1_in_top,
+            min_cluster_size=options.min_cluster_size,
+            two_panels=options.two_panels,
+            figsize=options.figsize,
+        )

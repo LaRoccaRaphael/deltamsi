@@ -21,8 +21,8 @@ These structs specify *what* to do; implementation lives in:
 - msix/core/builders/build_var_axis.py
 """
 
-from dataclasses import dataclass
-from typing import Optional, Literal, Dict, Any
+from dataclasses import dataclass, field
+from typing import Optional, Literal, Dict, Any, Tuple, Union, Callable, List
 
 __all__ = [
     "MeanSpectrumOptions",
@@ -30,6 +30,8 @@ __all__ = [
     "PeakPickingOptions",
     "PeakMatrixOptions",
     "RecalibrationOptions",
+    "MassClusteringOptions",
+    "KendrickPlotOptions",
 ]
 
 
@@ -228,3 +230,100 @@ class RecalibrationOptions:
             raise ValueError("n_peaks (number of peaks) must be a positive integer.")
         if self.min_hits_for_fit <= 0:
             raise ValueError("min_hits_for_fit must be a positive integer.")
+
+
+@dataclass(frozen=True)
+class MassClusteringOptions:
+    """
+    Options for clustering m/z values based on chemical candidates.
+    Matches the parameters of cluster_masses_with_candidates.
+    """
+
+    # Matching params
+    tol_da: float = 0.005
+    tol_ppm: Optional[float] = None
+    edge_max_delta_m: Optional[float] = None
+
+    # Column mapping
+    delta_col: str = "delta_da"
+    score_col: str = "score"
+    label_col: Optional[str] = "label"
+
+    # Graph & Clustering
+    resolution: float = 1.0
+    weight_transform: Union[str, Callable[[float], float]] = "inv1p"
+    weight_kwargs: Dict[str, Any] = field(default_factory=dict)
+
+    # Pruning (k-NN)
+    knn_k: Optional[int] = None
+    knn_mode: str = "union"
+
+    # Output options
+    return_graph: bool = False
+
+    def validate(self) -> None:
+        if self.tol_da <= 0:
+            raise ValueError("tol_da must be positive.")
+        if self.tol_ppm is not None and self.tol_ppm <= 0:
+            raise ValueError("tol_ppm must be positive.")
+        if self.resolution <= 0:
+            raise ValueError("resolution must be positive.")
+        if self.knn_k is not None and self.knn_k < 0:
+            raise ValueError("knn_k cannot be negative.")
+        if self.knn_mode not in ["union", "mutual"]:
+            raise ValueError("knn_mode must be 'union' or 'mutual'.")
+
+    def get_tol_param(self) -> Union[float, Tuple[str, float]]:
+        """Returns the format expected by the 'tol' argument."""
+        if self.tol_ppm is not None:
+            return ("ppm", self.tol_ppm)
+        return ("da", self.tol_da)
+
+
+@dataclass
+class KendrickPlotOptions:
+    """
+    Paramètres de configuration pour la génération de diagrammes de Kendrick.
+    """
+
+    # Paramètres de base Kendrick
+    base: Union[str, float, Tuple[float, float]] = "CH2"
+    mass_col: str = "m/z"
+
+    # Axes et Style
+    x_axis: str = "kendrick_mass"  # 'kendrick_mass' ou 'm_over_z'
+    kmd_mode: str = "fraction"  # 'fraction' ou 'defect'
+    point_size: float = 24.0
+    alpha: float = 0.9
+    hgrid_step: float = (
+        1.0  # Pas de la grille KMD (1.0 pour fraction, ~0.1 pour defect)
+    )
+    jitter: float = 0.0  # Bruit horizontal pour éviter les superpositions
+
+    # Annotations
+    annotate: bool = False
+    max_ann_per_group: int = 0  # Nombre max de points annotés par groupe (index)
+
+    # Filtres de Clusters
+    top_k_clusters: Optional[int] = 20  # Garder seulement les K plus grands clusters
+    selected_clusters: Optional[List[int]] = (
+        None  # Liste explicite d'IDs de clusters (ex: [0, 1, 5])
+    )
+    include_minus1_in_top: bool = (
+        True  # Inclure le cluster -1 (non-assignés) dans le top K
+    )
+    min_cluster_size: int = 1  # Taille minimale d'un cluster pour être affiché
+
+    # Mise en page
+    two_panels: bool = True  # Second panneau coloré par 'family' si disponible
+    figsize: Tuple[float, float] = (9.0, 4.5)
+    dpi: int = 140
+
+    def validate(self) -> None:
+        """Valide la cohérence des options de plot."""
+        if self.x_axis not in ["kendrick_mass", "m_over_z"]:
+            raise ValueError(f"x_axis invalide: {self.x_axis}")
+        if self.kmd_mode not in ["fraction", "defect"]:
+            raise ValueError(f"kmd_mode invalide: {self.kmd_mode}")
+        if self.top_k_clusters is not None and self.top_k_clusters < 1:
+            self.top_k_clusters = None
