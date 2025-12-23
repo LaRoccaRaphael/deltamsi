@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import pytest
 import numpy as np
@@ -114,6 +115,45 @@ def cube_with_global_spectrum(mock_imzml_data: str) -> MSICube:
         "intensity": intensities,
     }
     return cube
+
+
+# ----------------------------------------------------------------------
+# TESTS FOR ADATA PERSISTENCE
+# ----------------------------------------------------------------------
+
+
+def test_save_and_load_adata_default_paths(tmp_path: Path) -> None:
+    """Ensure AnnData can be saved and loaded using default paths and formats."""
+    cube = MSICube(data_directory=str(tmp_path))
+    cube.adata = ad.AnnData(
+        X=np.ones((3, 2)),
+        obs=pd.DataFrame(index=["a", "b", "c"]),
+        var=pd.DataFrame(index=["x", "y"]),
+    )
+
+    h5ad_path = cube.save_adata()
+    assert h5ad_path == os.path.join(str(tmp_path), "adata.h5ad")
+    assert os.path.exists(h5ad_path)
+
+    # Loading into a fresh instance via the classmethod
+    loaded_cube = MSICube.from_saved_adata(data_directory=str(tmp_path))
+    assert loaded_cube.adata is not None
+    assert loaded_cube.adata.n_obs == 3
+    assert loaded_cube.adata.n_vars == 2
+
+
+def test_save_adata_zarr(tmp_path: Path) -> None:
+    """Ensure AnnData can be saved in zarr format at the default location."""
+    cube = MSICube(data_directory=str(tmp_path))
+    cube.adata = ad.AnnData(
+        X=np.zeros((1, 1)),
+        obs=pd.DataFrame(index=["obs"]),
+        var=pd.DataFrame(index=["var"]),
+    )
+
+    zarr_path = cube.save_adata(file_format="zarr")
+    assert zarr_path == os.path.join(str(tmp_path), "adata.zarr")
+    assert os.path.isdir(zarr_path)
 
 
 # ----------------------------------------------------------------------
