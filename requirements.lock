@@ -28,12 +28,18 @@ google-crc32c==1.7.1
     # via zarr
 h5py==3.15.1
     # via anndata
+igraph==1.0.0
+    # via
+    #   leidenalg
+    #   python-igraph
 importlib-metadata==8.7.0
     # via dask
 jinja2==3.1.6
     # via distributed
 legacy-api-wrap==1.5
     # via anndata
+leidenalg==0.11.0
+    # via pymsix (pyproject.toml)
 locket==1.0.0
     # via
     #   distributed
@@ -85,6 +91,8 @@ pyimzml==1.5.5
     # via pymsix (pyproject.toml)
 python-dateutil==2.9.0.post0
     # via pandas
+python-igraph==1.0.0
+    # via pymsix (pyproject.toml)
 pytz==2025.2
     # via pandas
 pyyaml==6.0.3
