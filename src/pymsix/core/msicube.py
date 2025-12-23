@@ -84,6 +84,149 @@ class MSICube:
             f"MSICube initialized with {len(self.org_imzml_path_dict)} samples found."
         )
 
+    def _default_adata_path(self, file_format: Literal["h5ad", "zarr"]) -> str:
+        """
+        Build the default path for persisting AnnData objects based on the data directory.
+
+        Parameters
+        ----------
+        file_format : {"h5ad", "zarr"}
+            The storage format to use.
+
+        Returns
+        -------
+        str
+            The default file path inside ``self.data_directory``.
+        """
+
+        extension = "h5ad" if file_format == "h5ad" else "zarr"
+        return os.path.join(self.data_directory, f"adata.{extension}")
+
+    def save_adata(
+        self,
+        adata_path: Optional[str] = None,
+        file_format: Literal["h5ad", "zarr"] = "h5ad",
+        **kwargs: Any,
+    ) -> str:
+        """
+        Persist the AnnData object to disk in ``h5ad`` or ``zarr`` format.
+
+        Parameters
+        ----------
+        adata_path : str, optional
+            Custom path for saving. Defaults to ``adata.<ext>`` inside ``data_directory``.
+        file_format : {"h5ad", "zarr"}, default "h5ad"
+            Output format.
+        **kwargs : Any
+            Additional arguments forwarded to AnnData's write method.
+
+        Returns
+        -------
+        str
+            The path where the AnnData object was saved.
+
+        Raises
+        ------
+        ValueError
+            If ``self.adata`` is ``None``.
+        FileNotFoundError
+            If the target directory does not exist.
+        """
+
+        if self.adata is None:
+            raise ValueError("No AnnData object to save. Run analysis steps first.")
+
+        save_path = adata_path or self._default_adata_path(file_format)
+        parent_dir = os.path.dirname(save_path)
+
+        if parent_dir and not os.path.isdir(parent_dir):
+            raise FileNotFoundError(
+                f"The directory does not exist for saving AnnData: {parent_dir}"
+            )
+
+        if file_format == "h5ad":
+            self.adata.write_h5ad(save_path, **kwargs)
+        else:
+            self.adata.write_zarr(save_path, **kwargs)
+
+        logger.info(f"AnnData saved to {save_path} (format={file_format}).")
+        return save_path
+
+    def load_adata(
+        self,
+        adata_path: Optional[str] = None,
+        file_format: Literal["h5ad", "zarr"] = "h5ad",
+        **kwargs: Any,
+    ) -> ad.AnnData:
+        """
+        Load an AnnData object from disk and attach it to the MSICube instance.
+
+        Parameters
+        ----------
+        adata_path : str, optional
+            Path to the AnnData file/directory. Defaults to ``adata.<ext>`` inside ``data_directory``.
+        file_format : {"h5ad", "zarr"}, default "h5ad"
+            Input format.
+        **kwargs : Any
+            Additional arguments forwarded to AnnData's read method.
+
+        Returns
+        -------
+        AnnData
+            The loaded AnnData object (also stored in ``self.adata``).
+
+        Raises
+        ------
+        FileNotFoundError
+            If the specified AnnData path does not exist.
+        """
+
+        load_path = adata_path or self._default_adata_path(file_format)
+
+        if not os.path.exists(load_path):
+            raise FileNotFoundError(f"AnnData file not found: {load_path}")
+
+        if file_format == "h5ad":
+            loaded_adata = ad.read_h5ad(load_path, **kwargs)
+        else:
+            loaded_adata = ad.read_zarr(load_path, **kwargs)
+
+        self.adata = loaded_adata
+        logger.info(f"AnnData loaded from {load_path} (format={file_format}).")
+        return loaded_adata
+
+    @classmethod
+    def from_saved_adata(
+        cls,
+        data_directory: str,
+        adata_path: Optional[str] = None,
+        file_format: Literal["h5ad", "zarr"] = "h5ad",
+        **kwargs: Any,
+    ) -> "MSICube":
+        """
+        Construct an MSICube instance and populate it with a persisted AnnData object.
+
+        Parameters
+        ----------
+        data_directory : str
+            Base directory for the MSICube (used for locating raw data and default AnnData path).
+        adata_path : str, optional
+            Path to the saved AnnData. Defaults to ``adata.<ext>`` inside ``data_directory``.
+        file_format : {"h5ad", "zarr"}, default "h5ad"
+            Input format for the AnnData file.
+        **kwargs : Any
+            Additional arguments forwarded to :meth:`load_adata`.
+
+        Returns
+        -------
+        MSICube
+            An initialized MSICube with ``adata`` populated from disk.
+        """
+
+        cube = cls(data_directory=data_directory)
+        cube.load_adata(adata_path=adata_path, file_format=file_format, **kwargs)
+        return cube
+
     def _scan_imzml_files(self, directory: str) -> None:
         """
         Scans the directory for .imzML files and builds the dictionary.
