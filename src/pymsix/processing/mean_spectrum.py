@@ -163,5 +163,6 @@ def compute_mean_spectrum(
             mean_spec = _smooth_centroid_constant_da(
                 spike, options.binning_p, tolerance_da=options.tolerance_da or 0.0
             )
-
+    axis_mz = axis_mz[mean_spec >0]
+    mean_spec = mean_spec[mean_spec >0]
     return axis_mz, mean_spec
