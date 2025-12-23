@@ -186,8 +186,8 @@ def cluster_masses_with_candidates(
 
     Notes
     -----
-    - Uses python-igraph + leidenalg. Install with:
-        pip install python-igraph leidenalg
+    - Uses python-igraph + leidenalg (installed with pymsix). Ensure system
+      requirements for igraph are available on your platform.
     - Tolerance for ppm is computed per candidate (exact), with a prefilter window around dm using ppm at dm for speed.
     """
     weight_kwargs = weight_kwargs or {}
@@ -351,8 +351,9 @@ def cluster_masses_with_candidates(
         import leidenalg as la
     except Exception as e:
         raise ImportError(
-            "Leiden requires 'python-igraph' and 'leidenalg'. Install with:\n"
-            "  pip install python-igraph leidenalg"
+            "Leiden requires 'python-igraph' and 'leidenalg', which are installed "
+            "with pymsix. Ensure their system dependencies (e.g., igraph shared "
+            "libraries) are available on your platform."
         ) from e
 
     # Map to igraph index space (0..n-1, same as array indices)
