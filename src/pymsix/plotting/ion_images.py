@@ -54,10 +54,8 @@ def _plot_ion_images_core(
     # ... (Le reste de la logique _plot_ion_images_core reste inchangé)
     # ... (logique pour déterminer les colonnes à tracer et leurs étiquettes)
 
-    if (var_indices is None and mz_list is None) or (
-        var_indices is not None and mz_list is not None
-    ):
-        raise ValueError("Provide exactly one of var_indices or mz_list.")
+    if var_indices is None and mz_list is None:
+        raise ValueError("Provide at least one of var_indices or mz_list.")
 
     n_spectra, n_peaks = X.shape
     if selected_peaks.shape[0] != n_peaks:
@@ -69,7 +67,20 @@ def _plot_ion_images_core(
     # Déterminer quelles colonnes tracer et leurs étiquettes
     if var_indices is not None:
         plot_indices = np.asarray(var_indices, dtype=int)
-        plot_mzs = selected_peaks[plot_indices]
+
+        if plot_indices.ndim != 1:
+            raise ValueError("var_indices must be a 1D sequence of column indices.")
+        if (plot_indices < 0).any() or (plot_indices >= n_peaks).any():
+            raise ValueError("var_indices contains out-of-bounds indices.")
+
+        if mz_list is not None:
+            plot_mzs = np.asarray(mz_list, dtype=float)
+            if plot_mzs.shape[0] != plot_indices.shape[0]:
+                raise ValueError(
+                    "When both var_indices and mz_list are provided, they must have the same length."
+                )
+        else:
+            plot_mzs = selected_peaks[plot_indices]
     elif mz_list is not None:
         # Cette logique est pour l'implémentation complète avec la tolérance de pic
         # Pour le core, nous allons simplement prendre l'index le plus proche pour cet exemple.
