@@ -6,6 +6,7 @@ import re
 import anndata as ad
 import numpy as np
 import pandas as pd
+import scipy.sparse as sp
 from typing import Optional, Dict, Any, List, Literal, Sequence, Tuple, Union
 
 import matplotlib.pyplot as plt
@@ -906,18 +907,44 @@ class MSICube:
         # Les labels de clusters (ex: 0, 1, 2... et -1 pour les bruits) vont dans var
         self.adata.var["mass_cluster"] = res["labels"]
 
+        df_edges = res["edges"]
+        n_vars = self.adata.n_vars
+
+        weight_matrix = sp.coo_matrix(
+            (
+                df_edges["weight"].to_numpy(),
+                (df_edges["i"].to_numpy(), df_edges["j"].to_numpy()),
+            ),
+            shape=(n_vars, n_vars),
+        )
+        weight_matrix = (weight_matrix + weight_matrix.T).tocsr()
+
+        connectivities = (weight_matrix > 0).astype(np.float32)
+
+        self.adata.varp["mass_clustering_weights"] = weight_matrix
+        self.adata.varp["mass_clustering_connectivities"] = connectivities
+
+        deg = np.asarray((connectivities > 0).sum(axis=1)).ravel()
+        wdeg = np.asarray(weight_matrix.sum(axis=1)).ravel()
+        self.adata.var["mdg_degree"] = deg
+        self.adata.var["mdg_wdegree"] = wdeg
+
+        edges_with_names = df_edges.copy()
+        edges_with_names["u"] = self.adata.var_names.to_numpy()[
+            edges_with_names["i"].to_numpy()
+        ]
+        edges_with_names["v"] = self.adata.var_names.to_numpy()[
+            edges_with_names["j"].to_numpy()
+        ]
+
         # Les statistiques et les arêtes vont dans uns
         self.adata.uns["mass_clustering"] = {
             "n_clusters": res["n_clusters"],
             "n_minus1": res["n_minus1"],
             "compression": res["compression"],
-            "edges": res["edges"],
+            "edges": edges_with_names,
             "options": opts,  # On garde les options pour la traçabilité
         }
-
-        # Si l'utilisateur a demandé le graphe igraph, on le stocke aussi
-        if opts.return_graph and "graph" in res:
-            self.adata.uns["mass_clustering"]["graph"] = res["graph"]
 
         logger.info(f"Clustering terminé: {res['n_clusters']} clusters trouvés.")
 
