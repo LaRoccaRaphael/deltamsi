@@ -593,6 +593,8 @@ class MSICube:
             obsm={"spatial": coords_all},
         )
 
+        self.adata.layers["RAW"] = self.adata.X.copy()
+
         # Store options used for this step
         self.adata.uns["matrix_extraction_options"] = options.to_dict()
 
