@@ -374,6 +374,43 @@ class MSICube:
             "Global mean spectrum calculated and stored in adata.uns['mean_spectrum_global']."
         )
 
+    def clear_mean_spectra(self) -> None:
+        """
+        Remove mean spectra-related data from ``adata.uns`` to free up space.
+
+        This clears both per-sample and global mean spectra along with their
+        associated options and metadata.
+        """
+
+        if self.adata is None:
+            logger.warning(
+                "AnnData object (adata) is not initialized. Nothing to clear."
+            )
+            return
+
+        keys_to_remove = [
+            "mean_spectra",
+            "mean_spectra_options",
+            "mean_spectra_samples",
+            "mean_spectrum_global",
+            "mean_spectrum_global_options",
+        ]
+
+        removed_keys = []
+        for key in keys_to_remove:
+            if key in self.adata.uns:
+                self.adata.uns.pop(key, None)
+                removed_keys.append(key)
+
+        if removed_keys:
+            logger.info(
+                "Removed mean spectra entries from adata.uns: "
+                + ", ".join(removed_keys)
+                + "."
+            )
+        else:
+            logger.info("No mean spectra entries found in adata.uns to remove.")
+
     def perform_peak_picking(self, **kwargs: Any) -> None:
         """
         Performs peak picking on the global mean spectrum and stores the selected
