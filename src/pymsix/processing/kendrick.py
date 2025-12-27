@@ -36,7 +36,9 @@ NOMI = {
     "I": 127,
 }
 
-_FORM_RX = re.compile(r"([A-Z][a-z]?(\d*))")
+# Capture element symbol and optional count separately to avoid mixing the digits
+# into the element name (e.g. "CH2" -> ("C", ""), ("H", "2"))
+_FORM_RX = re.compile(r"([A-Z][a-z]?)(\d*)")
 
 
 def _parse_formula_to_mass(formula: str) -> Tuple[float, float]:
