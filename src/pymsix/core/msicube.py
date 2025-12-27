@@ -17,6 +17,7 @@ from pymsix.plotting.spectrum import plot_mean_spectrum_windows
 from pymsix.processing.mean_spectrum import compute_mean_spectrum
 from pymsix.processing.combine_mean_spectra import combine_mean_spectra, Spectrum
 from pymsix.processing.peak_picking import peak_picking, extract_peak_matrix
+from pymsix.processing.aggregation import aggregate_vars_by_label, Agg
 from pymsix.processing.normalization import tic_normalize_msicube
 
 from pymsix.processing.recalibration_core import (
@@ -438,6 +439,62 @@ class MSICube:
         adata_obj.uns["log1p"]["base"] = base
 
         return target_cube if copy else None
+
+    def aggregate_vars_by_label(
+        self,
+        label_col: str,
+        *,
+        layer: Optional[str] = None,
+        agg: Agg = "mean",
+        obsm_key: str = "X_by_label",
+        dropna: bool = True,
+        keep_order: bool = True,
+        as_df: bool = False,
+        dtype: Union[np.dtype, type] = np.float32,
+    ) -> pd.Index:
+        """
+        Aggregate variables that share the same label in ``adata.var[label_col]``.
+
+        The resulting ion images are stored in ``adata.obsm[obsm_key]`` with column
+        order recorded in ``adata.uns[f"{obsm_key}_labels"]``.
+
+        Parameters
+        ----------
+        label_col : str
+            Column in ``adata.var`` that contains the grouping labels.
+        layer : str | None, default None
+            Aggregate a specific layer instead of ``adata.X``.
+        agg : {"mean", "median", "max"}, default "mean"
+            Aggregation strategy across variables with the same label.
+        obsm_key : str, default "X_by_label"
+            Key for the aggregated matrix in ``adata.obsm``.
+        dropna : bool, default True
+            Drop variables with missing labels if ``True``; otherwise replace NaN labels
+            with "NA".
+        keep_order : bool, default True
+            Preserve the first occurrence order of labels instead of sorting.
+        as_df : bool, default False
+            Store aggregated values as a DataFrame instead of a NumPy array.
+        dtype : dtype or type, default numpy.float32
+            Data type of the aggregated matrix.
+
+        Returns
+        -------
+        pandas.Index
+            Index of the aggregated label names, named after ``label_col``.
+        """
+
+        return aggregate_vars_by_label(
+            self,
+            label_col,
+            layer=layer,
+            agg=agg,
+            obsm_key=obsm_key,
+            dropna=dropna,
+            keep_order=keep_order,
+            as_df=as_df,
+            dtype=dtype,
+        )
 
     def _scan_imzml_files(self, directory: str) -> None:
         """
