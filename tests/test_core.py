@@ -211,6 +211,41 @@ def test_init_success_and_state(mock_imzml_data: str) -> None:
     assert len(cube.org_imzml_path_dict) == 2
     assert "sample_A" in cube.org_imzml_path_dict
     assert "sample_B" in cube.org_imzml_path_dict
+
+
+def test_log1p_intensity_inplace(mock_imzml_data: str) -> None:
+    cube = MSICube(data_directory=mock_imzml_data)
+    cube.adata = ad.AnnData(
+        X=np.array([[0, 1, 9]], dtype=np.int32),
+        obs=pd.DataFrame(index=["pix"]),
+        var=pd.DataFrame(index=["a", "b", "c"]),
+    )
+
+    cube.log1p_intensity()
+
+    expected = np.log1p(np.array([[0, 1, 9]], dtype=np.float32))
+    np.testing.assert_allclose(cube.adata.X, expected)
+    assert cube.adata.uns.get("log1p", {}).get("base") is None
+
+
+def test_log1p_intensity_layer_and_copy(mock_imzml_data: str) -> None:
+    cube = MSICube(data_directory=mock_imzml_data)
+    cube.adata = ad.AnnData(
+        X=np.ones((2, 2)),
+        obs=pd.DataFrame(index=["p1", "p2"]),
+        var=pd.DataFrame(index=["v1", "v2"]),
+        layers={"counts": np.array([[3.0, 7.0], [4.0, 1.0]])},
+    )
+
+    transformed_cube = cube.log1p_intensity(layer="counts", base=2.0, copy=True)
+
+    assert transformed_cube is not None
+    np.testing.assert_allclose(
+        transformed_cube.adata.layers["counts"],
+        np.log1p(np.array([[3.0, 7.0], [4.0, 1.0]])) / np.log(2.0),
+    )
+    np.testing.assert_array_equal(cube.adata.layers["counts"], np.array([[3.0, 7.0], [4.0, 1.0]]))
+    assert transformed_cube.adata.uns.get("log1p", {}).get("base") == 2.0
     assert "sample_C" not in cube.org_imzml_path_dict
 
     # Verify path handling (ensures the function can resolve file names)
