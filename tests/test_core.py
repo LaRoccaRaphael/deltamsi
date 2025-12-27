@@ -394,11 +394,11 @@ def test_perform_peak_picking_success_and_storage(
 
     # A. Check adata.var update
     assert cube.adata is not None
-    assert "m/z" in cube.adata.var.columns
+    assert "mz" in cube.adata.var.columns
     assert cube.adata.var.shape[0] == len(expected_mzs)
 
     # Check that the stored m/z values match the mocked output
-    stored_mzs = cube.adata.var["m/z"].values
+    stored_mzs = cube.adata.var["mz"].values
     np.testing.assert_array_equal(stored_mzs, expected_mzs)
 
     # Check that the index (feature_id) is correctly formatted

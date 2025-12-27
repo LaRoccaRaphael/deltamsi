@@ -286,7 +286,7 @@ def plot_kendrick_from_clustering(
                 ax1.axhline(k, ls=":", lw=0.8, c="grey", alpha=0.4, zorder=0)
 
     ax1.set_xlabel(
-        "Kendrick mass (base {})".format(base) if x_axis == "kendrick_mass" else "m/z"
+        "Kendrick mass (base {})".format(base) if x_axis == "kendrick_mass" else "mz"
     )
     ax1.set_ylabel("KMD ({})".format(kmd_mode))
     ax1.set_title("Kendrick by CLUSTER")
@@ -321,7 +321,7 @@ def plot_kendrick_from_clustering(
         ax2.set_xlabel(
             "Kendrick mass (base {})".format(base)
             if x_axis == "kendrick_mass"
-            else "m/z"
+            else "mz"
         )
         ax2.set_title("Kendrick by FAMILY")
         ax2.grid(True, ls=":", alpha=0.25)

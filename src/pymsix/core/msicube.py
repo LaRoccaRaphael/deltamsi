@@ -414,7 +414,7 @@ class MSICube:
     def perform_peak_picking(self, **kwargs: Any) -> None:
         """
         Performs peak picking on the global mean spectrum and stores the selected
-        m/z values in adata.var.
+        mz values in adata.var.
 
         The selection criteria (topn, distance_da, distance_ppm, binning_p)
         are passed via kwargs.
@@ -468,15 +468,15 @@ class MSICube:
         )
 
         n_vars_new = len(selected_mzs)
-        logger.info(f"Peak picking finished. {len(selected_mzs)} m/z selected.")
+        logger.info(f"Peak picking finished. {len(selected_mzs)} mz selected.")
 
         # Store results in adata.var
 
-        # Create a new DataFrame for var based on the selected m/z values.
+        # Create a new DataFrame for var based on the selected mz values.
         # AnnData format prefers unique identifiers for the .var index.
-        # We use the formatted m/z as a unique identifier for AnnData.var.
+        # We use the formatted mz as a unique identifier for AnnData.var.
         new_var_data = pd.DataFrame(
-            data={"m/z": selected_mzs},
+            data={"mz": selected_mzs},
             # Index formatted for a readable identifier (e.g., 'mz_200.0000')
             index=[f"mz_{m:.4f}" for m in selected_mzs],
         )
@@ -524,13 +524,13 @@ class MSICube:
         self.adata.uns["peak_picking_options"] = options.to_dict()
 
         logger.info(
-            "Selected m/z values stored in adata.var and adata.uns['peak_picking_options']."
+            "Selected mz values stored in adata.var and adata.uns['peak_picking_options']."
         )
 
     def extract_peak_matrix(self, **kwargs: Any) -> None:
         """
         Extracts peak intensities for all pixels in all samples based on the
-        selected m/z values in adata.var.
+        selected mz values in adata.var.
 
         Populates:
             - adata.X (intensities)
@@ -544,9 +544,9 @@ class MSICube:
         logger.info("Starting extraction of peak intensity matrix (X) for all samples.")
 
         # 1. Prerequisites Check
-        if self.adata is None or self.adata.var is None or "m/z" not in self.adata.var:
+        if self.adata is None or self.adata.var is None or "mz" not in self.adata.var:
             logger.error(
-                "Target m/z list not found in adata.var['m/z']. "
+                "Target mz list not found in adata.var['mz']. "
                 "Run perform_peak_picking first."
             )
             return
@@ -565,7 +565,7 @@ class MSICube:
             return
 
         # 3. Preparation
-        target_mzs = self.adata.var["m/z"].values
+        target_mzs = self.adata.var["mz"].values
 
         # Containers for batch accumulation
         X_blocks = []
@@ -684,7 +684,7 @@ class MSICube:
         **kwargs: Any,
     ) -> None:
         """
-        Plots zoomed windows of mean spectra around m/z of interest for
+        Plots zoomed windows of mean spectra around mz of interest for
         multiple samples.
 
         This is a wrapper for msix.plotting.spectrum.plot_mean_spectrum_windows.
@@ -694,7 +694,7 @@ class MSICube:
         labels : list of str
             List of sample names (keys in adata.uns['mean_spectra']) to compare.
         peak_mzs : list of float
-            List of target m/z values to center the windows on.
+            List of target mz values to center the windows on.
         span_da : float
             Half-width of the zoom window in Da (default 0.1 Da).
         **kwargs
@@ -895,7 +895,7 @@ class MSICube:
         keep_mask: Optional[np.ndarray] = None,
     ) -> None:
         """
-        Regroupe les pics (m/z) stockés dans adata.var en clusters de familles chimiques.
+        Regroupe les pics (mz) stockés dans adata.var en clusters de familles chimiques.
 
         Args:
             candidates_df: DataFrame contenant les deltas de masse (ex: delta_da, score, label).
@@ -912,13 +912,13 @@ class MSICube:
         opts.validate()
 
         # 2. Récupération des masses (pics)
-        # On utilise les m/z identifiés lors de la phase de peak picking
-        if "m/z" not in self.adata.var:
+        # On utilise les mz identifiés lors de la phase de peak picking
+        if "mz" not in self.adata.var:
             raise ValueError(
-                "La colonne 'm/z' est absente de adata.var. Peak picking requis."
+                "La colonne 'mz' est absente de adata.var. Peak picking requis."
             )
 
-        masses = self.adata.var["m/z"].values
+        masses = self.adata.var["mz"].values
 
         logger.info(
             f"Démarrage du clustering sur {len(masses)} masses (Resolution: {opts.resolution})..."
@@ -1021,8 +1021,8 @@ class MSICube:
                 "Veuillez exécuter 'cluster_masses()' au préalable."
             )
 
-        # Récupération des masses (m/z)
-        masses = self.adata.var["m/z"].values
+        # Récupération des masses (mz)
+        masses = self.adata.var["mz"].values
 
         # Reconstruction du dictionnaire clustering_result attendu par la fonction de plot
         clustering_result = {"labels": self.adata.var["mass_cluster"].values}
@@ -1041,7 +1041,7 @@ class MSICube:
             clustering_result=clustering_result,
             family=family,
             base=options.base,
-            mass_col="m/z",  # Nom utilisé dans le DataFrame interne pour les axes
+            mass_col="mz",  # Nom utilisé dans le DataFrame interne pour les axes
             x_axis=options.x_axis,
             kmd_mode=options.kmd_mode,
             point_size=options.point_size,

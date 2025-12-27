@@ -188,15 +188,15 @@ def plot_ion_images(
     if "spatial" not in msicube.adata.obsm:
         raise ValueError("adata.obsm['spatial'] missing. Cannot plot images.")
 
-    if "m/z" not in msicube.adata.var:
-        raise ValueError("adata.var['m/z'] missing. Cannot resolve m/z values.")
+    if "mz" not in msicube.adata.var:
+        raise ValueError("adata.var['mz'] missing. Cannot resolve m/z values.")
 
     unique_samples = msicube.adata.obs["sample"].unique().tolist()
 
     # 1. Résoudre les indices de m/z dans la matrice X (commune à tous les échantillons)
     # Dans un vrai scénario, cela utiliserait la tolérance définie.
     # Ici, nous allons trouver l'index le plus proche dans adata.var['m/z'] pour chaque m/z demandé.
-    selected_mzs = msicube.adata.var["m/z"].values
+    selected_mzs = msicube.adata.var["mz"].values
     var_indices: List[int] = []
 
     for mz_target in mz_list:
