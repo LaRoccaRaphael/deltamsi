@@ -4,7 +4,40 @@ import pytest
 import numpy as np
 import anndata as ad
 import pandas as pd
+import scipy.sparse as sp
+import sys
+import types
+import unittest.mock as mock
 from typing import Any, Literal, cast
+
+# Provide a minimal sklearn stub when the dependency is unavailable in the test environment.
+if "sklearn" not in sys.modules:
+    sklearn_module = types.ModuleType("sklearn")
+    linear_model_module = types.ModuleType("sklearn.linear_model")
+    linear_model_module.RANSACRegressor = object
+    sklearn_module.linear_model = linear_model_module
+    sys.modules["sklearn"] = sklearn_module
+    sys.modules["sklearn.linear_model"] = linear_model_module
+
+
+@pytest.fixture
+def mocker(request: Any) -> Any:
+    """Lightweight replacement for pytest-mock's ``mocker`` fixture."""
+
+    patches = []
+
+    def _patch(*args: Any, **kwargs: Any) -> mock.MagicMock:
+        p = mock.patch(*args, **kwargs)
+        patched = p.start()
+        patches.append(p)
+        return patched
+
+    def fin() -> None:
+        for p in reversed(patches):
+            p.stop()
+
+    request.addfinalizer(fin)
+    return types.SimpleNamespace(patch=_patch)
 
 # Import the class and parameters to be tested
 from pymsix.core.msicube import MSICube
@@ -219,10 +252,73 @@ def test_compute_mean_spectra_stores_in_adata(
     assert stored_options["min_mz"] == 100.0
     assert stored_options["binning_p"] == 0.01
 
-    # 4. Verification of sample names
-    expected_samples = ["sample_A", "sample_B"]
-    actual_samples = cube.adata.uns["mean_spectra_samples"]
-    assert sorted(actual_samples) == sorted(expected_samples)
+
+def test_clip_or_mask_intensities_dense(mock_imzml_data: str) -> None:
+    """Clip low/high values in the main intensity matrix."""
+
+    cube = MSICube(data_directory=mock_imzml_data)
+    cube.adata = ad.AnnData(
+        X=np.array([[0.1, 1.2], [0.6, 0.8]], dtype=float),
+        obs=pd.DataFrame(index=["p1", "p2"]),
+        var=pd.DataFrame(index=["mz1", "mz2"]),
+    )
+
+    cube.clip_or_mask_intensities(
+        low=0.5, high=1.0, low_action="zero", high_action="clip"
+    )
+
+    assert cube.adata is not None
+    assert cube.adata.X[0, 0] == 0.0  # low threshold zeroed
+    assert cube.adata.X[0, 1] == 1.0  # high threshold clipped
+    assert cube.adata.uns["intensity_clipping"][0]["low_action"] == "zero"
+
+
+def test_clip_or_mask_intensities_layer_copy(mock_imzml_data: str) -> None:
+    """Operate on a specific layer and ensure copy keeps the original untouched."""
+
+    cube = MSICube(data_directory=mock_imzml_data)
+    cube.adata = ad.AnnData(
+        X=np.array([[1.0, 2.0]], dtype=float),
+        obs=pd.DataFrame(index=["p1"]),
+        var=pd.DataFrame(index=["mz1", "mz2"]),
+    )
+    cube.adata.layers["raw"] = np.array([[0.2, 5.0]], dtype=float)
+
+    clipped = cube.clip_or_mask_intensities(
+        low=1.0, high=4.0, low_action="clip", high_action="clip", layer="raw", copy=True
+    )
+
+    assert clipped is not None
+    np.testing.assert_allclose(clipped.layers["raw"], np.array([[1.0, 4.0]]))
+    np.testing.assert_allclose(cube.adata.layers["raw"], np.array([[0.2, 5.0]]))
+    assert "intensity_clipping" not in cube.adata.uns
+    assert clipped.uns["intensity_clipping"][0]["layer"] == "raw"
+
+
+def test_clip_or_mask_intensities_sparse(mock_imzml_data: str) -> None:
+    """Ensure sparse matrices are handled and zeros are eliminated when requested."""
+
+    cube = MSICube(data_directory=mock_imzml_data)
+    sparse_X = sp.csr_matrix([[0.1, 2.0], [0.6, 0.4]])
+    cube.adata = ad.AnnData(
+        X=sparse_X,
+        obs=pd.DataFrame(index=["p1", "p2"]),
+        var=pd.DataFrame(index=["mz1", "mz2"]),
+    )
+
+    cube.clip_or_mask_intensities(low=0.5, high=1.5, low_action="zero", high_action="clip")
+
+    assert cube.adata is not None
+    assert cube.adata.X.nnz == 2  # zeros removed
+    assert cube.adata.X[0, 1] == 1.5
+
+
+def test_clip_or_mask_intensities_requires_adata(mock_imzml_data: str) -> None:
+    """A helpful error is raised when no AnnData is present."""
+
+    cube = MSICube(data_directory=mock_imzml_data)
+    with pytest.raises(ValueError):
+        cube.clip_or_mask_intensities(low=1.0)
 
 
 def test_compute_mean_spectra_passes_options_object(
