@@ -17,6 +17,7 @@ from pymsix.plotting.spectrum import plot_mean_spectrum_windows
 from pymsix.processing.mean_spectrum import compute_mean_spectrum
 from pymsix.processing.combine_mean_spectra import combine_mean_spectra, Spectrum
 from pymsix.processing.peak_picking import peak_picking, extract_peak_matrix
+from pymsix.processing.normalization import tic_normalize_msicube
 
 from pymsix.processing.recalibration_core import (
     load_database_masses,
@@ -849,6 +850,44 @@ class MSICube:
             f"Extraction complete. "
             f"Final shape: {self.adata.shape} (Pixels x Peaks). "
             f"Data stored in adata.X, adata.obsm['spatial'], adata.obs['sample']."
+        )
+
+    def tic_normalize(
+        self,
+        *,
+        target_sum: float = 1e6,
+        layer: Optional[str] = None,
+        store_tic_in_obs: Optional[str] = "tic",
+        copy: bool = False,
+    ) -> Optional["MSICube"]:
+        """
+        Apply Total Ion Current (TIC) normalization to the cube's intensity matrix.
+
+        Parameters
+        ----------
+        target_sum : float, default 1e6
+            After normalization, each spectrum sums to ``target_sum``.
+        layer : str | None, default None
+            If ``None``, normalize ``adata.X``; otherwise, normalize ``adata.layers[layer]``.
+        store_tic_in_obs : str | None, default "tic"
+            Name of the ``adata.obs`` column where pre-normalization TIC values are stored.
+            If ``None``, TIC values are not stored.
+        copy : bool, default False
+            If ``True``, operate on and return a deep copy of the cube. Otherwise, modify
+            in place and return ``None``.
+
+        Returns
+        -------
+        MSICube | None
+            A normalized copy when ``copy`` is ``True``; otherwise ``None``.
+        """
+
+        return tic_normalize_msicube(
+            self,
+            target_sum=target_sum,
+            layer=layer,
+            store_tic_in_obs=store_tic_in_obs,
+            copy=copy,
         )
 
     def plot_ion_images(
