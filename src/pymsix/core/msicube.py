@@ -970,27 +970,27 @@ class MSICube:
         )
 
     def plot_ion_images(
-       self,
-       mz: Union[float, Sequence[float]],
-       samples: Optional[Union[str, Sequence[str]]] = None,
-       **kwargs: Any,
-   ) -> None:
-       """
-       Wrapper to plot ion images.
-      
-       Args:
-           mz: One or multiple m/z values.
-           samples: One or multiple sample names. If None, uses all available samples.
-           **kwargs: Arguments passed to plot_ion_images (cmap, share_intensity_scale, etc.)
-       """
-       if self.adata is None:
-           raise ValueError("AnnData is empty.")
-          
-       # Default to all samples if None provided
-       if samples is None:
-           samples = self.adata.obs['sample'].unique().tolist()
-          
-       plot_ion_images(self, mz=mz, samples=samples, **kwargs)
+        self,
+        mz: Union[float, str, Sequence[Union[float, str]]],
+        samples: Optional[Union[str, Sequence[str]]] = None,
+        **kwargs: Any,
+    ) -> None:
+        """
+        Wrapper to plot ion images.
+
+        Args:
+            mz: One or multiple m/z values or aggregated label names.
+            samples: One or multiple sample names. If None, uses all available samples.
+            **kwargs: Arguments passed to plot_ion_images (cmap, share_intensity_scale, etc.)
+        """
+        if self.adata is None:
+            raise ValueError("AnnData is empty.")
+
+        # Default to all samples if None provided
+        if samples is None:
+            samples = self.adata.obs['sample'].unique().tolist()
+
+        plot_ion_images(self, mz=mz, samples=samples, **kwargs)
 
     def plot_mean_spectrum_windows(
         self,
