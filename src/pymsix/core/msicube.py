@@ -949,40 +949,27 @@ class MSICube:
         )
 
     def plot_ion_images(
-        self,
-        mz_list: Sequence[float],
-        sample_name: Optional[str] = None,
-        mode: Literal["by_sample", "by_condition"] = "by_sample",  # NOUVEL ARGUMENT
-        **kwargs: Any,
-    ) -> None:
-        """
-        Plots ion images for a specific sample.
-
-        This is a wrapper for msix.plotting.ion_images.plot_ion_images.
-
-        Parameters
-        ----------
-        sample_name : str
-            The name of the sample to visualize.
-        **kwargs
-            Arguments passed to the plotting function (e.g., mz_list, ncols, cmap, vmin, vmax).
-        """
-        # Supprimer 'var_indices' si l'utilisateur l'a mis dans kwargs
-        if "var_indices" in kwargs:
-            logger.warning(
-                "Ignoring 'var_indices' in kwargs. MSICube.plot_ion_images only uses 'mz_list'."
-            )
-            del kwargs["var_indices"]
-
-        # Appel à la fonction externe plot_ion_images
-        # Nous transmettons tous les arguments de manière explicite.
-        plot_ion_images(
-            self,
-            sample_name=sample_name,
-            mode=mode,
-            mz_list=mz_list,  # Transmis en mot-clé pour éviter toute confusion positionnelle
-            **kwargs,
-        )
+       self,
+       mz: Union[float, Sequence[float]],
+       samples: Optional[Union[str, Sequence[str]]] = None,
+       **kwargs: Any,
+   ) -> None:
+       """
+       Wrapper to plot ion images.
+      
+       Args:
+           mz: One or multiple m/z values.
+           samples: One or multiple sample names. If None, uses all available samples.
+           **kwargs: Arguments passed to plot_ion_images (cmap, share_intensity_scale, etc.)
+       """
+       if self.adata is None:
+           raise ValueError("AnnData is empty.")
+          
+       # Default to all samples if None provided
+       if samples is None:
+           samples = self.adata.obs['sample'].unique().tolist()
+          
+       plot_ion_images(self, mz=mz, samples=samples, **kwargs)
 
     def plot_mean_spectrum_windows(
         self,
