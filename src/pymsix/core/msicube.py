@@ -1331,6 +1331,41 @@ class MSICube:
             var_prefix=var_prefix,
         )
 
+    def manual_label_kendrick(
+        self,
+        *,
+        varm_key: str,
+        label_key: str = "manual_label",
+        default_label: str = "unlabeled",
+        mz_key: Optional[str] = "mz",
+        coord_cols: Tuple[int, int] = (0, 1),
+        dragmode: str = "lasso",
+        point_size: int = 6,
+        height: int = 650,
+        max_points_warn: int = 120_000,
+    ):
+        """Launch an interactive manual labeling widget in Kendrick space.
+
+        Returns the ``(ui, state)`` tuple from
+        :func:`pymsix.plotting.kendrick_manual_label.manual_label_vars_from_kendrick`.
+        Requires the optional ``viz`` dependencies (``plotly`` and ``ipywidgets``).
+        """
+
+        from pymsix.plotting.kendrick_manual_label import manual_label_vars_from_kendrick
+
+        return manual_label_vars_from_kendrick(
+            self,
+            varm_key=varm_key,
+            label_key=label_key,
+            default_label=default_label,
+            mz_key=mz_key,
+            coord_cols=coord_cols,
+            dragmode=dragmode,
+            point_size=point_size,
+            height=height,
+            max_points_warn=max_points_warn,
+        )
+
     def plot_kendrick(
         self, options: Optional[KendrickPlotOptions] = None, **kwargs: Any
     ) -> Tuple[plt.Figure, Union[List[plt.Axes], plt.Axes], pd.DataFrame]:
