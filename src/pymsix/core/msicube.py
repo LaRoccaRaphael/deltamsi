@@ -54,6 +54,8 @@ class Logger:
 logger = Logger()
 
 
+LowAction = Literal["keep", "nan", "zero", "clip"]
+HighAction = Literal["keep", "nan", "clip"]
 def _log1p_inplace_or_copy(X: Any, *, base: Optional[float] = None) -> Any:
     """
     Apply ``log1p`` to a dense or sparse matrix, mirroring Scanpy's behavior.
@@ -220,6 +222,131 @@ class MSICube:
         self.adata = loaded_adata
         logger.info(f"AnnData loaded from {load_path} (format={file_format}).")
         return loaded_adata
+
+    def clip_or_mask_intensities(
+        self,
+        *,
+        low: Optional[float] = None,
+        high: Optional[float] = None,
+        low_action: LowAction = "nan",
+        high_action: HighAction = "clip",
+        layer: Optional[str] = None,
+        copy: bool = False,
+    ) -> Optional[ad.AnnData]:
+        """
+        Clip or mask intensity values stored in the MSI cube's AnnData object.
+
+        Parameters
+        ----------
+        low, high
+            Thresholds. If provided:
+              - values < ``low`` are handled by ``low_action``
+              - values > ``high`` are handled by ``high_action``
+        low_action
+            - "keep": do nothing
+            - "nan":  set values < low to ``NaN``
+            - "zero": set values < low to ``0``
+            - "clip": set values < low to ``low``
+        high_action
+            - "keep": do nothing
+            - "nan":  set values > high to ``NaN``
+            - "clip": set values > high to ``high``
+        layer
+            If ``None`` operate on ``adata.X`` else on ``adata.layers[layer]``.
+        copy
+            If ``True``, operate on a copy of :attr:`adata` and return it. Otherwise
+            modify the existing object in-place and return ``None``.
+
+        Notes (sparse)
+        --------------
+        - For sparse matrices, only stored (non-zero) entries are modified. Implicit
+          zeros stay zeros.
+        - Setting sparse entries to ``NaN`` is allowed but can break downstream
+          operations. If more arithmetic follows, prefer ``low_action="zero"`` and
+          ``high_action="clip"``.
+
+        Returns
+        -------
+        AnnData or None
+            The modified AnnData object when ``copy=True``; otherwise ``None``.
+        """
+
+        if self.adata is None:
+            raise ValueError("MSICube.adata is None. Run data extraction first.")
+
+        obj = self.adata.copy() if copy else self.adata
+
+        if layer is None:
+            X = obj.X
+        else:
+            if layer not in obj.layers:
+                raise KeyError(f"Layer '{layer}' not found in adata.layers.")
+            X = obj.layers[layer]
+
+        if low is None and high is None:
+            return obj if copy else None
+
+        if sp.issparse(X):
+            X2 = X.astype(np.float32, copy=True)
+            data = X2.data
+
+            if low is not None and low_action != "keep":
+                mask = data < low
+                if low_action == "nan":
+                    data[mask] = np.nan
+                elif low_action == "zero":
+                    data[mask] = 0.0
+                elif low_action == "clip":
+                    data[mask] = low
+
+            if high is not None and high_action != "keep":
+                mask = data > high
+                if high_action == "nan":
+                    data[mask] = np.nan
+                elif high_action == "clip":
+                    data[mask] = high
+
+            if low_action == "zero":
+                X2.eliminate_zeros()
+
+            X_out = X2
+
+        else:
+            X_arr = np.asarray(X, dtype=np.float32).copy()
+
+            if low is not None and low_action != "keep":
+                if low_action == "nan":
+                    X_arr[X_arr < low] = np.nan
+                elif low_action == "zero":
+                    X_arr[X_arr < low] = 0.0
+                elif low_action == "clip":
+                    X_arr[X_arr < low] = low
+
+            if high is not None and high_action != "keep":
+                if high_action == "nan":
+                    X_arr[X_arr > high] = np.nan
+                elif high_action == "clip":
+                    X_arr[X_arr > high] = high
+
+            X_out = X_arr
+
+        if layer is None:
+            obj.X = X_out
+        else:
+            obj.layers[layer] = X_out
+
+        obj.uns.setdefault("intensity_clipping", [])
+        obj.uns["intensity_clipping"].append(
+            {
+                "layer": layer,
+                "low": None if low is None else float(low),
+                "high": None if high is None else float(high),
+                "low_action": low_action,
+                "high_action": high_action,
+            }
+        )
+
+        return obj if copy else None
 
     @classmethod
     def from_saved_adata(
