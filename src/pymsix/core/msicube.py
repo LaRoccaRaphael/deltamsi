@@ -19,6 +19,10 @@ from pymsix.processing.combine_mean_spectra import combine_mean_spectra, Spectru
 from pymsix.processing.peak_picking import peak_picking, extract_peak_matrix
 from pymsix.processing.aggregation import aggregate_vars_by_label, Agg
 from pymsix.processing.normalization import tic_normalize_msicube
+from pymsix.processing.colocalization import (
+    CosineColocParams,
+    compute_mz_cosine_colocalization,
+)
 
 from pymsix.processing.recalibration_core import (
     load_database_masses,
@@ -440,6 +444,23 @@ class MSICube:
         adata_obj.uns["log1p"]["base"] = base
 
         return target_cube if copy else None
+
+    def compute_cosine_colocalization(
+        self, *, params: CosineColocParams = CosineColocParams()
+    ) -> Tuple[Union[np.ndarray, sp.csr_matrix], Optional[np.ndarray]]:
+        """Compute cosine similarity between ion images stored on this cube.
+
+        This is a convenience wrapper around
+        :func:`pymsix.processing.colocalization.compute_mz_cosine_colocalization`.
+        The resulting similarity matrix is stored in ``adata.varp`` when
+        ``params.store_varp_key`` is provided, and optional keep masks are stored in
+        ``adata.var``.
+        """
+
+        if self.adata is None:
+            raise ValueError("MSICube.adata is None. Run data extraction first.")
+
+        return compute_mz_cosine_colocalization(self, params=params)
 
     def aggregate_vars_by_label(
         self,
