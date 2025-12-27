@@ -10,6 +10,7 @@ and provides the selected indices and variable names for export.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import warnings
 from typing import Any, List, Optional, Tuple, TYPE_CHECKING
 
 import numpy as np
@@ -98,6 +99,22 @@ def manual_label_vars_from_kendrick(
             "Consider filtering variables before labeling or increasing max_points_warn."
         )
 
+    finite_mask = np.isfinite(KM) & np.isfinite(KMD)
+    if not finite_mask.any():
+        raise ValueError(
+            "Kendrick coordinates contain no finite points to plot. "
+            "Check adata.varm entries for NaN/inf or recompute with compute_kendrick_varm()."
+        )
+    if not finite_mask.all():
+        warnings.warn(
+            "Some Kendrick coordinates are non-finite and will be hidden in the plot.",
+            RuntimeWarning,
+        )
+        KM = KM[finite_mask]
+        KMD = KMD[finite_mask]
+        var_names = var_names[finite_mask]
+        var_pos = var_pos[finite_mask]
+
     if label_key not in adata.var.columns:
         adata.var[label_key] = default_label
     else:
@@ -160,6 +177,9 @@ def manual_label_vars_from_kendrick(
 
     colors = _label_to_color(adata.var[label_key].to_numpy())
     hover = _make_hover(adata.var[label_key].to_numpy())
+    if not finite_mask.all():
+        colors = colors[finite_mask]
+        hover = hover[finite_mask]
 
     try:
         import anywidget  # noqa: F401
