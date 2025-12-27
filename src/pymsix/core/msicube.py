@@ -54,6 +54,31 @@ class Logger:
 logger = Logger()
 
 
+def _log1p_inplace_or_copy(X: Any, *, base: Optional[float] = None) -> Any:
+    """
+    Apply ``log1p`` to a dense or sparse matrix, mirroring Scanpy's behavior.
+
+    Sparse matrices are copied before mutation; dense inputs are modified in-place when
+    possible. If ``base`` is provided, intensities are scaled accordingly.
+    """
+
+    if sp.issparse(X):
+        X = X.copy()
+        X.data = np.log1p(X.data)
+        if base is not None:
+            X.data /= np.log(base)
+        return X
+
+    X_arr = np.asarray(X)
+    if not np.issubdtype(X_arr.dtype, np.floating):
+        X_arr = X_arr.astype(np.float32, copy=False)
+
+    np.log1p(X_arr, out=X_arr)
+    if base is not None:
+        X_arr /= np.log(base)
+    return X_arr
+
+
 class MSICube:
     """
     Main object for Mass Spectrometry Imaging (MSI) analysis.
@@ -227,6 +252,64 @@ class MSICube:
         cube = cls(data_directory=data_directory)
         cube.load_adata(adata_path=adata_path, file_format=file_format, **kwargs)
         return cube
+
+    def log1p_intensity(
+        self,
+        *,
+        base: Optional[float] = None,
+        layer: Optional[str] = None,
+        copy: bool = False,
+    ) -> Optional["MSICube"]:
+        """
+        Apply Scanpy-like ``log1p`` transformation to the MSI intensity matrix.
+
+        Parameters
+        ----------
+        base : float | None
+            If provided, divide by ``log(base)`` to change the logarithm base.
+        layer : str | None
+            Target a specific ``adata.layers`` entry instead of ``adata.X``.
+        copy : bool
+            If ``True``, return a new :class:`MSICube` instance with transformed data.
+            Otherwise, modify the object in-place and return ``None``.
+
+        Returns
+        -------
+        MSICube | None
+            A new MSICube when ``copy=True``; otherwise ``None``.
+
+        Raises
+        ------
+        ValueError
+            If ``adata`` is missing on the MSICube instance.
+        KeyError
+            If a specified ``layer`` is not found.
+        """
+
+        if self.adata is None:
+            raise ValueError("MSICube.adata is None. Run data extraction first.")
+
+        target_cube = MSICube(self.data_directory) if copy else self
+        target_cube.org_imzml_path_dict = self.org_imzml_path_dict.copy()
+        target_cube.adata = self.adata.copy() if copy else self.adata
+
+        adata_obj = target_cube.adata
+
+        if layer is None:
+            if adata_obj.X is None:
+                raise ValueError("MSICube.adata.X is None.")
+            adata_obj.X = _log1p_inplace_or_copy(adata_obj.X, base=base)
+        else:
+            if layer not in adata_obj.layers:
+                raise KeyError(f"Layer '{layer}' not found in adata.layers")
+            adata_obj.layers[layer] = _log1p_inplace_or_copy(
+                adata_obj.layers[layer], base=base
+            )
+
+        adata_obj.uns.setdefault("log1p", {})
+        adata_obj.uns["log1p"]["base"] = base
+
+        return target_cube if copy else None
 
     def _scan_imzml_files(self, directory: str) -> None:
         """
