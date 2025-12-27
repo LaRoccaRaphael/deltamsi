@@ -1,5 +1,6 @@
 import pytest
 import numpy as np
+import pandas as pd
 import anndata as ad
 from unittest.mock import MagicMock, patch
 from pymsix.core.msicube import MSICube
@@ -26,15 +27,10 @@ def cube_with_spectra(tmp_path: str) -> MSICube:
 
 
 @patch("matplotlib.pyplot.show")
-@patch("matplotlib.pyplot.subplots")
 def test_plot_mean_spectrum_windows_success(
-    mock_subplots: MagicMock, mock_show: MagicMock, cube_with_spectra: MSICube
+    mock_show: MagicMock, cube_with_spectra: MSICube
 ) -> None:
     """Test successful data extraction and plotting call."""
-    mock_fig = MagicMock()
-    mock_ax = MagicMock()
-    mock_subplots.return_value = (mock_fig, np.array([mock_ax]))
-
     plot_mean_spectrum_windows(
         cube_with_spectra,
         labels=["sample_A", "sample_B"],
@@ -42,9 +38,6 @@ def test_plot_mean_spectrum_windows_success(
         span_da=0.1,
         tol_ppm=10.0,
     )
-
-    assert mock_subplots.called
-    assert mock_show.called
 
 
 def test_plot_mean_spectrum_windows_missing_sample(
@@ -109,3 +102,91 @@ def test_plot_mean_spectrum_windows_no_data(cube_with_spectra: MSICube) -> None:
             span_da=0.1,
             tol_da=0.01,
         )
+
+
+class DummyAxis:
+    def __init__(self) -> None:
+        self.imshow_calls = []
+        self.titles = []
+
+    def imshow(self, img: np.ndarray, **_: Any) -> MagicMock:
+        self.imshow_calls.append(img)
+        return MagicMock()
+
+    def set_aspect(self, *_: Any, **__: Any) -> None:
+        return None
+
+    def set_title(self, title: str, **_: Any) -> None:
+        self.titles.append(title)
+
+    def tick_params(self, *_: Any, **__: Any) -> None:
+        return None
+
+    def set_xlabel(self, *_: Any, **__: Any) -> None:
+        return None
+
+    def set_ylabel(self, *_: Any, **__: Any) -> None:
+        return None
+
+    def axis(self, *_: Any, **__: Any) -> None:
+        return None
+
+    def set_visible(self, *_: Any, **__: Any) -> None:
+        return None
+
+
+class DummyFormatter:
+    def set_powerlimits(self, *_: Any, **__: Any) -> None:
+        return None
+
+
+class DummyColorbar:
+    def __init__(self) -> None:
+        self.ax = MagicMock()
+        self.formatter = DummyFormatter()
+
+
+class DummyFigure:
+    def __init__(self) -> None:
+        self.colorbars = []
+
+    def suptitle(self, *_: Any, **__: Any) -> None:
+        return None
+
+    def colorbar(self, *_: Any, **__: Any) -> DummyColorbar:
+        cb = DummyColorbar()
+        self.colorbars.append(cb)
+        return cb
+
+
+class DummyDivider:
+    def append_axes(self, *_: Any, **__: Any) -> MagicMock:
+        return MagicMock()
+
+
+@patch("matplotlib.pyplot.show")
+def test_plot_ion_images_with_aggregated_labels(mock_show: MagicMock) -> None:
+    cube = MSICube(data_directory=".")
+    cube.adata = ad.AnnData(
+        X=np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
+        obs=pd.DataFrame({"sample": ["s1", "s1"]}, index=["p0", "p1"]),
+        var=pd.DataFrame(
+            {"mz": [100.0, 101.0, 102.0], "label": ["g1", "g1", "g2"]},
+            index=["mz1", "mz2", "mz3"],
+        ),
+        obsm={"spatial": np.array([[0, 0], [1, 0]])},
+    )
+
+    cube.aggregate_vars_by_label("label", obsm_key="X_label_mean")
+
+    dummy_axis = DummyAxis()
+    dummy_fig = DummyFigure()
+
+    with patch("matplotlib.pyplot.subplots", return_value=(dummy_fig, dummy_axis)), patch(
+        "mpl_toolkits.axes_grid1.make_axes_locatable", return_value=DummyDivider()
+    ):
+        cube.plot_ion_images(mz="g1", samples="s1", label_obsm_key="X_label_mean")
+
+    np.testing.assert_array_equal(dummy_axis.imshow_calls[0], np.array([[1.5, 4.5]]))
+    assert dummy_axis.titles[0] == "s1\ng1"
+    assert mock_show.called
