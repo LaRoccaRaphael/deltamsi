@@ -64,7 +64,7 @@ def manual_label_vars_from_kendrick(
         notebook cell and ``state`` holds the last selection (positions and var names).
 
     Notes:
-        * Requires the optional ``viz`` dependencies (``plotly`` + ``ipywidgets``).
+        * Requires the optional ``viz`` dependencies (``plotly`` + ``ipywidgets`` + ``anywidget``).
         * Best used in Jupyter Notebook/Lab due to reliance on ``FigureWidget`` callbacks.
     """
 
@@ -161,7 +161,21 @@ def manual_label_vars_from_kendrick(
     colors = _label_to_color(adata.var[label_key].to_numpy())
     hover = _make_hover(adata.var[label_key].to_numpy())
 
-    fig = go.FigureWidget()
+    try:
+        import anywidget  # noqa: F401
+    except ImportError as e:  # pragma: no cover - optional dependency import guard
+        raise ImportError(
+            "manual_label_vars_from_kendrick requires the optional 'anywidget' dependency. "
+            "Install it directly with `pip install anywidget` or via the `pymsix[viz]` extras."
+        ) from e
+
+    try:
+        fig = go.FigureWidget()
+    except ImportError as e:  # pragma: no cover - forwarded from plotly
+        raise ImportError(
+            "Plotly FigureWidget support is unavailable. Ensure `anywidget` is installed and that "
+            "the optional visualization dependencies are present."
+        ) from e
     fig.add_trace(
         go.Scatter(
             x=KM,
