@@ -29,6 +29,7 @@ from pymsix.processing.recalibration_cli_clean import write_corrected_msi
 from pymsix.processing.recal_visu_clean import diagnostics_for_pixel, select_pixels
 
 from pymsix.processing.mass_clustering import cluster_masses_with_candidates
+from pymsix.processing.kendrick import compute_kendrick_varm
 from pymsix.plotting.plot_kendrick_cluster_mz import plot_kendrick_from_clustering
 
 from pymsix.params.options import (
@@ -1293,6 +1294,43 @@ class MSICube:
 
         logger.info(f"Clustering terminé: {res['n_clusters']} clusters trouvés.")
 
+    def compute_kendrick_coordinates(
+        self,
+        *,
+        mz_key: str = "mz",
+        base: Union[str, float, Tuple[float, float]] = "CH2",
+        kmd_mode: Literal["fraction", "defect"] = "fraction",
+        varm_key: Optional[str] = None,
+        store_1d_in_var: bool = False,
+        var_prefix: str = "kendrick",
+    ) -> str:
+        """Calcule et stocke les coordonnées de Kendrick dans ``adata.varm``.
+
+        Args:
+            mz_key: Nom de la colonne de masses dans ``adata.var``.
+            base: Base Kendrick (formule chimique, masse exacte ou tuple (exact, nominal)).
+            kmd_mode: Mode de calcul du défaut de masse (``"fraction"`` ou ``"defect"``).
+            varm_key: Nom de la clé de sortie dans ``adata.varm``. Généré automatiquement si None.
+            store_1d_in_var: Si True, stocke aussi KM/KMD comme colonnes 1D dans ``adata.var``.
+            var_prefix: Préfixe pour les colonnes 1D optionnelles.
+
+        Returns:
+            La clé ``varm`` utilisée pour stocker les coordonnées calculées.
+        """
+
+        if self.adata is None:
+            raise ValueError("L'objet AnnData est vide. Impossible de calculer les coordonnées Kendrick.")
+
+        return compute_kendrick_varm(
+            self.adata,
+            mz_key=mz_key,
+            base=base,
+            kmd_mode=kmd_mode,
+            varm_key=varm_key,
+            store_1d_in_var=store_1d_in_var,
+            var_prefix=var_prefix,
+        )
+
     def plot_kendrick(
         self, options: Optional[KendrickPlotOptions] = None, **kwargs: Any
     ) -> Tuple[plt.Figure, Union[List[plt.Axes], plt.Axes], pd.DataFrame]:
@@ -1328,7 +1366,11 @@ class MSICube:
             )
 
         # Récupération des masses (mz)
-        masses = self.adata.var["mz"].values
+        if options.mass_col not in self.adata.var:
+            raise ValueError(
+                f"La colonne '{options.mass_col}' est absente de adata.var. Peak picking requis."
+            )
+        masses = self.adata.var[options.mass_col].values
 
         # Reconstruction du dictionnaire clustering_result attendu par la fonction de plot
         clustering_result = {"labels": self.adata.var["mass_cluster"].values}
@@ -1345,9 +1387,11 @@ class MSICube:
         return plot_kendrick_from_clustering(
             masses=masses,
             clustering_result=clustering_result,
+            adata=self.adata,
+            kendrick_varm_key=options.kendrick_varm_key,
             family=family,
             base=options.base,
-            mass_col="mz",  # Nom utilisé dans le DataFrame interne pour les axes
+            mass_col=options.mass_col,  # Nom utilisé dans le DataFrame interne pour les axes
             x_axis=options.x_axis,
             kmd_mode=options.kmd_mode,
             point_size=options.point_size,
