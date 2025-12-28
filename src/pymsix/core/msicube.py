@@ -1166,8 +1166,8 @@ class MSICube:
         Args:
             mz: One or multiple m/z values or aggregated label names.
             samples: One or multiple sample names. If None, uses all available samples.
-            **kwargs: Arguments passed to plot_ion_images (cmap, share_intensity_scale,
-                obsm_key, etc.)
+            **kwargs: Arguments passed to plot_ion_images (layer, cmap,
+                share_intensity_scale, obsm_key, etc.)
         """
         if self.adata is None:
             raise ValueError("AnnData is empty.")

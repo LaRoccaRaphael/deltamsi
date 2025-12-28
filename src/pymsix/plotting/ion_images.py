@@ -26,6 +26,7 @@ def plot_ion_images(
     mz: Union[float, str, Sequence[Union[float, str]]],
     samples: Union[str, Sequence[str]],
     *,
+    layer: Optional[str] = None,
     scale_mode: Literal["per_sample", "per_ion", "global", "local"] = "per_sample",
     ncols: int = 3,
     cmap: str = "turbo",
@@ -39,11 +40,18 @@ def plot_ion_images(
 
     Parameters
     ----------
+    layer:
+        Name of the ``AnnData.layers`` entry to plot. If ``None``, uses ``adata.X``.
     scale_mode:
         - "per_sample": same scale for all ions of a given sample (RECOMMENDED)
         - "per_ion":    same scale for one ion across samples
         - "global":     same scale for all plots
         - "local":      independent scale per image
+
+    Notes
+    -----
+    The underlying ``AnnData`` object is never modified in-place. Intensity values are
+    copied before any scaling so that ``adata.X`` or the chosen layer remain unchanged.
     """
 
     if msicube.adata is None:
@@ -86,7 +94,12 @@ def plot_ion_images(
             col_indices.append(idx)
             actual_names.append(float(mz_values[idx]))
 
-        data_matrix = adata.X
+        if layer is None:
+            data_matrix = adata.X
+        else:
+            if layer not in adata.layers:
+                raise KeyError(f"Layer '{layer}' not found in AnnData.layers")
+            data_matrix = adata.layers[layer]
 
     # ------------------------------------------------------------------
     # 3. Extract image data
@@ -107,6 +120,7 @@ def plot_ion_images(
             if hasattr(intens_src, "toarray")
             else intens_src[:, col_indices]
         )
+        intens = np.array(intens, copy=True)
 
         x, y = coords[:, 0].astype(int), coords[:, 1].astype(int)
         x_min, x_max = x.min(), x.max()
@@ -117,6 +131,7 @@ def plot_ion_images(
             img[y - y_min, x - x_min] = intens[:, i]
 
             local_max = np.nanmax(img) if not np.all(np.isnan(img)) else 0.0
+            local_min = np.nanmin(img) if not np.all(np.isnan(img)) else 0.0
 
             plot_data.append({
                 "img": img,
@@ -124,6 +139,7 @@ def plot_ion_images(
                 "name": name,
                 "extent": (x_min, x_max, y_min, y_max),
                 "max": local_max,
+                "min": local_min,
             })
 
     if not plot_data:
@@ -132,14 +148,20 @@ def plot_ion_images(
     # ------------------------------------------------------------------
     # 4. Compute intensity scales
     # ------------------------------------------------------------------
-    max_by_sample = defaultdict(float)
-    max_by_ion = defaultdict(float)
-    global_max = 0.0
+    max_by_sample = defaultdict(lambda: -np.inf)
+    max_by_ion = defaultdict(lambda: -np.inf)
+    min_by_sample = defaultdict(lambda: np.inf)
+    min_by_ion = defaultdict(lambda: np.inf)
+    global_max = -np.inf
+    global_min = np.inf
 
     for d in plot_data:
         max_by_sample[d["sample"]] = max(max_by_sample[d["sample"]], d["max"])
         max_by_ion[d["name"]] = max(max_by_ion[d["name"]], d["max"])
+        min_by_sample[d["sample"]] = min(min_by_sample[d["sample"]], d["min"])
+        min_by_ion[d["name"]] = min(min_by_ion[d["name"]], d["min"])
         global_max = max(global_max, d["max"])
+        global_min = min(global_min, d["min"])
 
     # ------------------------------------------------------------------
     # 5. Layout
@@ -171,15 +193,23 @@ def plot_ion_images(
         d = plot_data[i]
 
         if scale_mode == "per_sample":
-            vmax = max_by_sample[d["sample"]]
+            vmin, vmax = min_by_sample[d["sample"]], max_by_sample[d["sample"]]
         elif scale_mode == "per_ion":
-            vmax = max_by_ion[d["name"]]
+            vmin, vmax = min_by_ion[d["name"]], max_by_ion[d["name"]]
         elif scale_mode == "global":
-            vmax = global_max
+            vmin, vmax = global_min, global_max
         else:  # local
-            vmax = d["max"]
+            vmin, vmax = d["min"], d["max"]
 
-        vmax = max(vmax, 1e-12)
+        if not np.isfinite(vmin):
+            vmin = 0.0
+        if not np.isfinite(vmax):
+            vmax = 0.0
+        if vmin == vmax:
+            eps = 1e-12 if vmin == 0 else abs(vmin) * 1e-6
+            eps = max(eps, 1e-12)
+            vmin -= eps / 2
+            vmax += eps / 2
 
         im = ax.imshow(
             d["img"],
@@ -187,7 +217,7 @@ def plot_ion_images(
             cmap=cmap,
             interpolation="none",
             extent=d["extent"],
-            vmin=0,
+            vmin=vmin,
             vmax=vmax,
             aspect="equal",
         )
