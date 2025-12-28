@@ -187,6 +187,8 @@ def fit_ransac_linear_model(
     if y_roi.size < max(int(params.min_hits_for_fit), int(params.ransac_min_samples)):
         return None
 
+    from sklearn import linear_model
+
     model = linear_model.RANSACRegressor(
         max_trials=int(params.ransac_max_trials),
         min_samples=int(params.ransac_min_samples),

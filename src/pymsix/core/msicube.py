@@ -61,6 +61,8 @@ class Logger:
 logger = Logger()
 
 
+ScaleMode = Literal["all", "per_sample", "per_condition"]
+ScaleStats = Dict[Any, Tuple[np.ndarray, np.ndarray]]
 LowAction = Literal["keep", "nan", "zero", "clip"]
 HighAction = Literal["keep", "nan", "clip"]
 def _log1p_inplace_or_copy(X: Any, *, base: Optional[float] = None) -> Any:
@@ -930,6 +932,189 @@ class MSICube:
             f"Final shape: {self.adata.shape} (Pixels x Peaks). "
             f"Data stored in adata.X, adata.obsm['spatial'], adata.obs['sample']."
         )
+
+    def scale_ion_images_zscore(
+        self,
+        *,
+        mode: ScaleMode = "all",
+        layer: Optional[str] = None,
+        output_layer: Optional[str] = None,
+        with_mean: bool = True,
+        with_std: bool = True,
+        ddof: int = 0,
+        eps: float = 1e-8,
+        max_value: Optional[float] = None,
+        return_stats: bool = False,
+        copy: bool = False,
+    ) -> Union[ad.AnnData, ScaleStats, Tuple[ad.AnnData, ScaleStats], None]:
+        """
+        Z-score scale ion images (columns) stored in the MSICube ``AnnData`` object.
+
+        Grouping is controlled via ``mode``:
+
+        - ``"all"``: compute statistics across all pixels.
+        - ``"per_sample"``: scale independently for each entry in ``adata.obs['sample']``.
+        - ``"per_condition"``: scale independently for each entry in ``adata.obs['condition']``.
+
+        Parameters
+        ----------
+        mode
+            Grouping strategy for computing means and standard deviations.
+        layer
+            Source layer to scale. If ``None``, ``adata.X`` is used.
+        output_layer
+            Destination layer for the scaled data. If ``None``, the source container
+            (``layer`` or ``adata.X``) is overwritten. When set, the scaled matrix is
+            written to ``adata.layers[output_layer]`` without altering the source.
+        with_mean, with_std, ddof, eps, max_value
+            Parameters controlling the z-score computation.
+        return_stats
+            If ``True``, return a mapping of group -> (mean, std) arrays.
+        copy
+            If ``True``, operate on and return a copy of the underlying ``AnnData``
+            instead of modifying the MSICube in place.
+
+        Returns
+        -------
+        AnnData | dict | tuple | None
+            - If ``copy`` is ``True`` and ``return_stats`` is ``True``: returns
+              ``(adata_copy, stats)``.
+            - If ``copy`` is ``True`` and ``return_stats`` is ``False``: returns the
+              scaled ``AnnData``.
+            - If ``copy`` is ``False`` and ``return_stats`` is ``True``: returns the
+              statistics dictionary.
+            - Otherwise returns ``None``.
+        """
+
+        if self.adata is None:
+            raise ValueError(
+                "MSICube.adata is None. Run data extraction before scaling ion images."
+            )
+
+        obj = self.adata.copy() if copy else self.adata
+
+        if layer is None:
+            X = obj.X
+        else:
+            if layer not in obj.layers:
+                raise KeyError(f"Layer '{layer}' not found in adata.layers.")
+            X = obj.layers[layer]
+
+        if X is None:
+            raise ValueError("No ion image data found to scale (adata.X is None).")
+
+        if mode == "all":
+            groups = {None: np.ones(obj.n_obs, dtype=bool)}
+            group_key: Optional[str] = None
+        elif mode == "per_sample":
+            group_key = "sample"
+            if group_key not in obj.obs:
+                raise KeyError("mode='per_sample' requires adata.obs['sample']")
+            vals = obj.obs[group_key].astype("category")
+            groups = {k: (vals == k).to_numpy() for k in vals.cat.categories}
+        elif mode == "per_condition":
+            group_key = "condition"
+            if group_key not in obj.obs:
+                raise KeyError("mode='per_condition' requires adata.obs['condition']")
+            vals = obj.obs[group_key].astype("category")
+            groups = {k: (vals == k).to_numpy() for k in vals.cat.categories}
+        else:
+            raise ValueError(f"Unknown mode={mode!r}")
+
+        def _scale_dense_block(Xsub: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+            if np.isnan(Xsub).any():
+                mean = (
+                    np.nanmean(Xsub, axis=0)
+                    if with_mean
+                    else np.zeros(Xsub.shape[1], dtype=np.float64)
+                )
+                std = (
+                    np.nanstd(Xsub, axis=0, ddof=ddof)
+                    if with_std
+                    else np.ones(Xsub.shape[1], dtype=np.float64)
+                )
+            else:
+                mean = (
+                    Xsub.mean(axis=0)
+                    if with_mean
+                    else np.zeros(Xsub.shape[1], dtype=np.float64)
+                )
+                std = (
+                    Xsub.std(axis=0, ddof=ddof)
+                    if with_std
+                    else np.ones(Xsub.shape[1], dtype=np.float64)
+                )
+
+            std = np.asarray(std, dtype=np.float64)
+            std[std < eps] = 1.0
+
+            if with_mean:
+                Xsub -= mean
+            if with_std:
+                Xsub /= std
+
+            if max_value is not None:
+                np.clip(Xsub, -max_value, max_value, out=Xsub)
+
+            return np.asarray(mean, dtype=np.float64), std
+
+        stats: ScaleStats = {}
+
+        if sp.issparse(X):
+            X_lil = X.tolil(copy=True)
+            for g, m in groups.items():
+                idx = np.where(m)[0]
+                if idx.size == 0:
+                    continue
+                block = X[idx, :].toarray().astype(np.float32, copy=False)
+                mean, std = _scale_dense_block(block)
+                stats[g] = (mean, std)
+                X_lil[idx, :] = block
+
+            X_out = X_lil.tocsr()
+        else:
+            X_out = np.asarray(X).astype(np.float32, copy=False)
+            if not X_out.flags.writeable:
+                X_out = X_out.copy()
+
+            for g, m in groups.items():
+                idx = np.where(m)[0]
+                if idx.size == 0:
+                    continue
+                block = np.asarray(X_out[idx, :], dtype=np.float32, copy=False)
+                mean, std = _scale_dense_block(block)
+                stats[g] = (mean, std)
+                X_out[idx, :] = block
+
+        if output_layer is None:
+            if layer is None:
+                obj.X = X_out
+            else:
+                obj.layers[layer] = X_out
+        else:
+            obj.layers[output_layer] = X_out
+
+        obj.uns.setdefault("scale_ion_images_zscore", {})
+        obj.uns["scale_ion_images_zscore"].update(
+            {
+                "mode": mode,
+                "group_key": group_key,
+                "layer": layer,
+                "output_layer": output_layer,
+                "with_mean": with_mean,
+                "with_std": with_std,
+                "ddof": int(ddof),
+                "eps": float(eps),
+                "max_value": None if max_value is None else float(max_value),
+            }
+        )
+
+        if copy:
+            if return_stats:
+                return obj, stats
+            return obj
+
+        return stats if return_stats else None
 
     def tic_normalize(
         self,
