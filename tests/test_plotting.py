@@ -105,12 +105,15 @@ def test_plot_mean_spectrum_windows_no_data(cube_with_spectra: MSICube) -> None:
 
 
 class DummyAxis:
-    def __init__(self) -> None:
+    def __init__(self, *args: Any, **__: Any) -> None:
         self.imshow_calls = []
+        self.imshow_kwargs = []
         self.titles = []
+        self.figure = args[0] if args else None
 
-    def imshow(self, img: np.ndarray, **_: Any) -> MagicMock:
+    def imshow(self, img: np.ndarray, **kwargs: Any) -> MagicMock:
         self.imshow_calls.append(img)
+        self.imshow_kwargs.append(kwargs)
         return MagicMock()
 
     def set_aspect(self, *_: Any, **__: Any) -> None:
@@ -134,6 +137,15 @@ class DummyAxis:
     def set_visible(self, *_: Any, **__: Any) -> None:
         return None
 
+    def get_figure(self) -> Any:
+        return self.figure or DummyFigure()
+
+    def set_axes_locator(self, *_: Any, **__: Any) -> None:
+        return None
+
+    def get_position(self, *_: Any, **__: Any) -> Any:
+        return MagicMock()
+
 
 class DummyFormatter:
     def set_powerlimits(self, *_: Any, **__: Any) -> None:
@@ -145,6 +157,12 @@ class DummyColorbar:
         self.ax = MagicMock()
         self.formatter = DummyFormatter()
 
+    def set_label(self, *_: Any, **__: Any) -> None:
+        return None
+
+    def update_ticks(self, *_: Any, **__: Any) -> None:
+        return None
+
 
 class DummyFigure:
     def __init__(self) -> None:
@@ -153,10 +171,16 @@ class DummyFigure:
     def suptitle(self, *_: Any, **__: Any) -> None:
         return None
 
+    def set_facecolor(self, *_: Any, **__: Any) -> None:
+        return None
+
     def colorbar(self, *_: Any, **__: Any) -> DummyColorbar:
         cb = DummyColorbar()
         self.colorbars.append(cb)
         return cb
+
+    def add_axes(self, *_: Any, **__: Any) -> DummyAxis:
+        return DummyAxis(self)
 
 
 class DummyDivider:
@@ -181,6 +205,7 @@ def test_plot_ion_images_with_aggregated_labels(mock_show: MagicMock) -> None:
 
     dummy_axis = DummyAxis()
     dummy_fig = DummyFigure()
+    dummy_axis.figure = dummy_fig
 
     with patch("matplotlib.pyplot.subplots", return_value=(dummy_fig, dummy_axis)), patch(
         "mpl_toolkits.axes_grid1.make_axes_locatable", return_value=DummyDivider()
@@ -188,7 +213,7 @@ def test_plot_ion_images_with_aggregated_labels(mock_show: MagicMock) -> None:
         cube.plot_ion_images(mz="g1", samples="s1", obsm_key="X_label_mean")
 
     np.testing.assert_array_equal(dummy_axis.imshow_calls[0], np.array([[1.5, 4.5]]))
-    assert dummy_axis.titles[0] == "s1\ng1"
+    assert dummy_axis.titles[0] == "g1\nSample: s1"
     assert mock_show.called
 
 
@@ -210,6 +235,8 @@ def test_plot_ion_images_with_custom_obsm_key(mock_show: MagicMock) -> None:
     dummy_axis = DummyAxis()
     dummy_axis_2 = DummyAxis()
     dummy_fig = DummyFigure()
+    dummy_axis.figure = dummy_fig
+    dummy_axis_2.figure = dummy_fig
 
     axes = np.array([dummy_axis, dummy_axis_2], dtype=object)
 
@@ -220,6 +247,60 @@ def test_plot_ion_images_with_custom_obsm_key(mock_show: MagicMock) -> None:
 
     np.testing.assert_array_equal(dummy_axis.imshow_calls[0], np.array([[1.0, 4.0]]))
     np.testing.assert_array_equal(dummy_axis_2.imshow_calls[0], np.array([[2.5, 5.5]]))
-    assert dummy_axis.titles[0] == "unlabeled"
-    assert dummy_axis_2.titles[0] == "region_1"
+    assert dummy_axis.titles[0] == "unlabeled\nSample: s1"
+    assert dummy_axis_2.titles[0] == "region_1\nSample: s1"
     assert mock_show.called
+
+
+@patch("matplotlib.pyplot.show")
+def test_plot_ion_images_respects_layer_and_keeps_original_data(mock_show: MagicMock) -> None:
+    cube = MSICube(data_directory=".")
+    base_x = np.array([[1.0, 2.0], [3.0, 4.0]])
+    scaled_layer = np.array([[10.0, 20.0], [30.0, 40.0]])
+
+    cube.adata = ad.AnnData(
+        X=base_x.copy(),
+        obs=pd.DataFrame({"sample": ["s1", "s1"]}, index=["p0", "p1"]),
+        var=pd.DataFrame({"mz": [100.0, 200.0]}, index=["mz1", "mz2"]),
+        obsm={"spatial": np.array([[0, 0], [1, 0]])},
+    )
+    cube.adata.layers["scaled"] = scaled_layer.copy()
+
+    dummy_axis = DummyAxis()
+    dummy_fig = DummyFigure()
+    dummy_axis.figure = dummy_fig
+
+    with patch("matplotlib.pyplot.subplots", return_value=(dummy_fig, dummy_axis)), patch(
+        "mpl_toolkits.axes_grid1.make_axes_locatable", return_value=DummyDivider()
+    ):
+        cube.plot_ion_images(mz=100.0, samples="s1", layer="scaled")
+
+    np.testing.assert_array_equal(dummy_axis.imshow_calls[0], np.array([[10.0, 30.0]]))
+    np.testing.assert_array_equal(cube.adata.X, base_x)
+    np.testing.assert_array_equal(cube.adata.layers["scaled"], scaled_layer)
+
+
+@patch("matplotlib.pyplot.show")
+def test_plot_ion_images_handles_negative_intensities(mock_show: MagicMock) -> None:
+    cube = MSICube(data_directory=".")
+    negative_x = np.array([[-1.0, 0.5], [-3.0, 1.5]])
+
+    cube.adata = ad.AnnData(
+        X=negative_x.copy(),
+        obs=pd.DataFrame({"sample": ["s1", "s1"]}, index=["p0", "p1"]),
+        var=pd.DataFrame({"mz": [100.0, 200.0]}, index=["mz1", "mz2"]),
+        obsm={"spatial": np.array([[0, 0], [1, 0]])},
+    )
+
+    dummy_axis = DummyAxis()
+    dummy_fig = DummyFigure()
+    dummy_axis.figure = dummy_fig
+
+    with patch("matplotlib.pyplot.subplots", return_value=(dummy_fig, dummy_axis)), patch(
+        "mpl_toolkits.axes_grid1.make_axes_locatable", return_value=DummyDivider()
+    ):
+        cube.plot_ion_images(mz=100.0, samples="s1")
+
+    np.testing.assert_array_equal(dummy_axis.imshow_calls[0], np.array([[-1.0, -3.0]]))
+    assert dummy_axis.imshow_kwargs[0]["vmin"] == -3.0
+    assert dummy_axis.imshow_kwargs[0]["vmax"] == -1.0
