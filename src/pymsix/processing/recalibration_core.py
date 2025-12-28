@@ -12,7 +12,6 @@ from typing import Optional, Tuple, Any
 
 import numpy as np
 from scipy.stats import gaussian_kde
-from sklearn import linear_model
 
 
 @dataclass(frozen=True)
@@ -184,6 +183,8 @@ def fit_ransac_linear_model(
 
     if y_roi.size < max(int(params.min_hits_for_fit), int(params.ransac_min_samples)):
         return None
+
+    from sklearn import linear_model
 
     model = linear_model.RANSACRegressor(
         max_trials=int(params.ransac_max_trials),
