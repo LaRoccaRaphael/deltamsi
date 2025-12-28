@@ -27,6 +27,10 @@ dependencies = [
     "xarray>=2024.3.0",
     "tqdm>=4.66",
     "rich>=13.7",
+    "ipykernel>=7.1.0",
+    "plotly>=6.5.0",
+    "ipywidgets>=8.1.8",
+    "anywidget>=0.9.21",
 ]
 
 [project.optional-dependencies]
