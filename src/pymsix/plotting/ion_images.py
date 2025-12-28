@@ -1,269 +1,227 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Sequence, Optional, Tuple, Union, List
-import pandas as pd
+from typing import Sequence, Optional, Tuple, Union, Literal
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from collections import defaultdict
 
-# Note: We don't import MSICube directly to avoid circular imports,
-# but we assume the object passed has the structure of MSICube.
+
+# ------------------------------------------------------------------
+# Global plotting style (modern & scientific)
+# ------------------------------------------------------------------
+plt.rcParams.update({
+    "font.family": "DejaVu Sans",
+    "font.size": 10,
+    "axes.titlesize": 12,
+    "axes.labelsize": 9,
+    "xtick.labelsize": 8,
+    "ytick.labelsize": 8,
+    "figure.dpi": 120,
+    "savefig.dpi": 300,
+    "axes.linewidth": 0.8,
+})
+
 
 def plot_ion_images(
-    msicube,  # Type: MSICube
+    msicube,
     mz: Union[float, str, Sequence[Union[float, str]]],
     samples: Union[str, Sequence[str]],
     *,
-    share_intensity_scale: bool = False,
-    ncols: int = 4,
-    cmap: str = "viridis",
+    scale_mode: Literal["per_sample", "per_ion", "global", "local"] = "per_sample",
+    ncols: int = 3,
+    cmap: str = "turbo",
     figsize: Optional[Tuple[float, float]] = None,
     show_axes: bool = True,
     obsm_key: Optional[str] = None,
     label_obsm_key: str = "X_by_label",
 ) -> None:
     """
-    Plots ion images with high flexibility and ergonomic defaults.
-
-    Can plot:
-    - One m/z for multiple samples (comparison).
-    - Multiple m/z for one sample (exploration).
-    - Multiple m/z for multiple samples (matrix).
-    - Aggregated ion images computed via :func:`MSICube.aggregate_vars_by_label` by
-      passing the label names instead of m/z values.
+    Plot modern, clean and scientifically robust MSI ion images.
 
     Parameters
     ----------
-    msicube : MSICube
-        The MSICube object.
-    mz : float | str | list of float | list of str
-        The m/z value(s) to visualize. If strings match aggregated label names
-        stored in ``adata.uns[f"{<obsm_key>}_labels"]`` (or ``label_obsm_key`` for
-        backward compatibility), the aggregated ion images stored in
-        ``adata.obsm[obsm_key]`` are used instead of raw peaks.
-    samples : str or list of str
-        The sample name(s) to visualize.
-    share_intensity_scale : bool
-        If True, all images will share the same intensity scale (vmax).
-        Useful to compare absolute intensities between samples.
-    ncols : int
-        Number of columns in the grid.
-    cmap : str
-        Matplotlib colormap (e.g., 'viridis', 'magma', 'inferno').
-    figsize : tuple, optional
-        Custom figure size. If None, it is calculated automatically.
-    show_axes : bool
-        If True, prints X/Y coordinates on the image borders.
-    obsm_key : str, optional
-        Key of ``adata.obsm`` storing aggregated ion images created by
-        :func:`aggregate_vars_by_label`. If ``None``, falls back to
-        ``label_obsm_key`` for backward compatibility.
-    label_obsm_key : str
-        Deprecated in favor of ``obsm_key``. Retained for backward compatibility
-        with earlier releases.
+    scale_mode:
+        - "per_sample": same scale for all ions of a given sample (RECOMMENDED)
+        - "per_ion":    same scale for one ion across samples
+        - "global":     same scale for all plots
+        - "local":      independent scale per image
     """
+
     if msicube.adata is None:
-        raise ValueError("MSICube.adata is None. Run extract_peak_matrix first.")
+        raise ValueError("MSICube.adata is empty.")
 
     adata = msicube.adata
 
-    # --- 1. Normalize Inputs (make them lists) ---
-    if isinstance(mz, (float, int, str)):
-        target_features = [mz]
-    else:
-        target_features = list(mz)
+    # ------------------------------------------------------------------
+    # 1. Normalize inputs
+    # ------------------------------------------------------------------
+    target_features = [mz] if isinstance(mz, (float, int, str)) else list(mz)
+    target_samples = [samples] if isinstance(samples, str) else list(samples)
 
-    if isinstance(samples, str):
-        target_samples = [samples]
-    else:
-        target_samples = list(samples)
-
-    # --- 2. Resolve feature indices (m/z or aggregated labels) ---
+    # ------------------------------------------------------------------
+    # 2. Resolve m/z vs aggregated labels
+    # ------------------------------------------------------------------
     aggregated_key = obsm_key or label_obsm_key
-
-    if obsm_key is not None and obsm_key != label_obsm_key:
-        if label_obsm_key != "X_by_label":
-            raise ValueError(
-                "Both 'obsm_key' and 'label_obsm_key' were provided and differ. "
-                "Use only one to specify the aggregated matrix key."
-            )
-
     label_names = adata.uns.get(f"{aggregated_key}_labels")
     label_lookup = {str(name): idx for idx, name in enumerate(label_names or [])}
 
     using_labels = (
         bool(label_lookup)
-        and all(isinstance(feature, str) and feature in label_lookup for feature in target_features)
+        and all(isinstance(f, str) and f in label_lookup for f in target_features)
     )
 
-    col_indices: List[int] = []
-    actual_names: List[Union[str, float]] = []
-
     if using_labels:
-        for feature in target_features:
-            col_indices.append(label_lookup[str(feature)])
-            actual_names.append(str(feature))
-        if f"{aggregated_key}_labels" not in adata.uns:
-            raise KeyError(
-                f"Aggregated labels not found in adata.uns['{aggregated_key}_labels']"
-            )
-        if aggregated_key not in adata.obsm:
-            raise KeyError(f"Aggregated matrix '{aggregated_key}' not found in adata.obsm")
+        col_indices = [label_lookup[str(f)] for f in target_features]
+        actual_names = [str(f) for f in target_features]
         data_matrix = adata.obsm[aggregated_key]
     else:
-        try:
-            target_mzs = [float(feature) for feature in target_features]
-        except (TypeError, ValueError) as e:
-            raise ValueError(
-                "Features must be m/z values or label names present in "
-                f"adata.uns['{aggregated_key}_labels']."
-            ) from e
+        mz_values = (
+            adata.var["m/z"].values
+            if "m/z" in adata.var
+            else adata.var["mz"].values
+        )
 
-        available_mzs = adata.var["mz"].values
-        resolved_indices: List[int] = []
-        resolved_names: List[float] = []
-        for m in target_mzs:
-            idx = int(np.argmin(np.abs(available_mzs - m)))
-            resolved_indices.append(idx)
-            resolved_names.append(float(available_mzs[idx]))
-        col_indices = resolved_indices
-        actual_names = resolved_names
+        col_indices, actual_names = [], []
+        for m in target_features:
+            idx = int(np.argmin(np.abs(mz_values - float(m))))
+            col_indices.append(idx)
+            actual_names.append(float(mz_values[idx]))
+
         data_matrix = adata.X
 
-    # --- 3. Prepare Data Extraction Loop ---
-    # We need to extract data for every (sample, feature) combination
+    # ------------------------------------------------------------------
+    # 3. Extract image data
+    # ------------------------------------------------------------------
     plot_data = []
 
-    global_max = 0.0
-
     for sample in target_samples:
-        # Filter for the sample
         mask = adata.obs["sample"] == sample
         if not np.any(mask):
-            print(f"WARNING: Sample '{sample}' not found. Skipping.")
             continue
 
-        # Get coordinates
         coords = adata.obsm["spatial"][mask]
-        if hasattr(coords, "values"):
-            coords = coords.values
+        coords = coords.values if hasattr(coords, "values") else coords
 
-        if using_labels and hasattr(data_matrix, "loc"):
-            intensities_source = data_matrix.loc[mask, :]
-        else:
-            intensities_source = data_matrix[mask, :]
+        intens_src = data_matrix[mask, :]
+        intens = (
+            intens_src[:, col_indices].toarray()
+            if hasattr(intens_src, "toarray")
+            else intens_src[:, col_indices]
+        )
 
-        intensities = np.asarray(intensities_source)[:, col_indices]
-
-        # Determine Grid Dimensions for this sample
-        x = coords[:, 0].astype(int)
-        y = coords[:, 1].astype(int)
+        x, y = coords[:, 0].astype(int), coords[:, 1].astype(int)
         x_min, x_max = x.min(), x.max()
         y_min, y_max = y.min(), y.max()
-        width = x_max - x_min + 1
-        height = y_max - y_min + 1
 
-        # Process each feature for this sample
         for i, name in enumerate(actual_names):
-            # Construct dense image
-            img = np.full((height, width), np.nan, dtype=float)
-            # Normalize coords to 0-based
-            img[y - y_min, x - x_min] = intensities[:, i]
+            img = np.full((y_max - y_min + 1, x_max - x_min + 1), np.nan)
+            img[y - y_min, x - x_min] = intens[:, i]
 
-            local_max = np.nanmax(img)
-            if not np.isnan(local_max) and local_max > global_max:
-                global_max = local_max
+            local_max = np.nanmax(img) if not np.all(np.isnan(img)) else 0.0
 
             plot_data.append({
                 "img": img,
                 "sample": sample,
                 "name": name,
                 "extent": (x_min, x_max, y_min, y_max),
-                "local_max": local_max
+                "max": local_max,
             })
 
     if not plot_data:
-        raise ValueError("No data found for the provided samples/mz.")
+        return
 
-    # --- 4. Plotting Setup ---
+    # ------------------------------------------------------------------
+    # 4. Compute intensity scales
+    # ------------------------------------------------------------------
+    max_by_sample = defaultdict(float)
+    max_by_ion = defaultdict(float)
+    global_max = 0.0
+
+    for d in plot_data:
+        max_by_sample[d["sample"]] = max(max_by_sample[d["sample"]], d["max"])
+        max_by_ion[d["name"]] = max(max_by_ion[d["name"]], d["max"])
+        global_max = max(global_max, d["max"])
+
+    # ------------------------------------------------------------------
+    # 5. Layout
+    # ------------------------------------------------------------------
     n_plots = len(plot_data)
     nrows = int(np.ceil(n_plots / ncols))
 
     if figsize is None:
-        # Auto-scale figure: ~4 inches per column, ~3.5 per row
-        figsize = (4 * ncols, 3.5 * nrows)
+        figsize = (5.2 * ncols, 5.0 * nrows)
 
-    fig, axes = plt.subplots(nrows, ncols, figsize=figsize, constrained_layout=True)
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=figsize,
+        constrained_layout=True,
+    )
 
-    # Handle single ax case
-    if n_plots == 1:
-        axes = [axes]
-    else:
-        axes = axes.flatten()
+    fig.set_facecolor("white")
+    axes = np.atleast_1d(axes).flatten()
 
-    # --- 5. Draw Images ---
+    # ------------------------------------------------------------------
+    # 6. Plot images
+    # ------------------------------------------------------------------
     for i, ax in enumerate(axes):
-        if i < n_plots:
-            data = plot_data[i]
-            img = data["img"]
-
-            # Determine Scaling
-            if share_intensity_scale:
-                vmax = global_max
-            else:
-                vmax = data["local_max"] if not np.isnan(data["local_max"]) else 1.0
-
-            # Plot
-            im = ax.imshow(
-                img,
-                origin="lower",
-                cmap=cmap,
-                interpolation="nearest",
-                extent=data["extent"], # This sets the axes ticks to real coordinates
-                vmin=0,
-                vmax=vmax
-            )
-
-            # Aesthetics
-            ax.set_aspect('equal') # Prevents distortion
-
-            # Smart Title Logic
-            # If multiple samples & 1 feature -> Title = Sample
-            # If 1 sample & multiple features -> Title = feature name
-            # Else -> Title = Sample | feature name
-            if len(target_samples) > 1 and len(target_features) == 1:
-                title = f"{data['sample']}"
-                sup_title = f"m/z {data['name']:.4f}" if not using_labels else str(data['name'])
-                fig.suptitle(sup_title, fontsize=14)
-            elif len(target_samples) == 1 and len(target_features) > 1:
-                if using_labels:
-                    title = str(data['name'])
-                else:
-                    title = f"{data['name']:.4f} m/z"
-                fig.suptitle(f"Sample: {data['sample']}", fontsize=14)
-            else:
-                name_str = str(data['name']) if using_labels else f"{data['name']:.4f} m/z"
-                title = f"{data['sample']}\n{name_str}"
-
-            ax.set_title(title, fontsize=11)
-
-            if show_axes:
-                ax.tick_params(axis='both', which='major', labelsize=8)
-                ax.set_xlabel("x", fontsize=8)
-                ax.set_ylabel("y", fontsize=8)
-            else:
-                ax.axis("off")
-
-            # Colorbar (Right size magic)
-            # Create an axes divider to place colorbar exactly beside the plot
-            from mpl_toolkits.axes_grid1 import make_axes_locatable
-            divider = make_axes_locatable(ax)
-            cax = divider.append_axes("right", size="5%", pad=0.1)
-            cbar = fig.colorbar(im, cax=cax)
-            cbar.ax.tick_params(labelsize=8)
-            # Scientific notation for intensity if numbers are huge
-            cbar.formatter.set_powerlimits((0, 0))
-
-        else:
-            # Hide unused axes
+        if i >= n_plots:
             ax.axis("off")
-            ax.set_visible(False)
+            continue
+
+        d = plot_data[i]
+
+        if scale_mode == "per_sample":
+            vmax = max_by_sample[d["sample"]]
+        elif scale_mode == "per_ion":
+            vmax = max_by_ion[d["name"]]
+        elif scale_mode == "global":
+            vmax = global_max
+        else:  # local
+            vmax = d["max"]
+
+        vmax = max(vmax, 1e-12)
+
+        im = ax.imshow(
+            d["img"],
+            origin="lower",
+            cmap=cmap,
+            interpolation="none",
+            extent=d["extent"],
+            vmin=0,
+            vmax=vmax,
+            aspect="equal",
+        )
+
+        ion_label = d["name"] if using_labels else f"{d['name']:.4f} m/z"
+        ax.set_title(
+            f"{ion_label}\nSample: {d['sample']}",
+            pad=12,
+            fontweight="bold",
+        )
+
+        if show_axes:
+            ax.set_xlabel("X (pixels)")
+            ax.set_ylabel("Y (pixels)")
+        else:
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("bottom", size="6%", pad=0.55)
+        cbar = fig.colorbar(im, cax=cax, orientation="horizontal")
+        cbar.set_label("Ion intensity (a.u.)", fontsize=9)
+        cbar.ax.tick_params(labelsize=8)
+        cbar.formatter.set_powerlimits((-2, 3))
+        cbar.update_ticks()
+
+    # ------------------------------------------------------------------
+    # 7. Figure title
+    # ------------------------------------------------------------------
+    fig.suptitle(
+        f"Mass Spectrometry Imaging – Ion distributions "
+        f"(scale: {scale_mode.replace('_', ' ')})",
+        fontsize=17,
+        fontweight="bold",
+    )
 
     plt.show()

@@ -214,7 +214,7 @@ def manual_label_vars_from_kendrick(
         xaxis_title="Kendrick mass (KM)",
         yaxis_title="Kendrick mass defect (KMD)",
         margin=dict(l=10, r=10, t=40, b=10),
-        title=f"Manual labeling in Kendrick space: varm['{varm_key}'] → var['{label_key}']",
+        title=f"Kendrick plot → {varm_key}",
     )
 
     label_text = widgets.Text(
