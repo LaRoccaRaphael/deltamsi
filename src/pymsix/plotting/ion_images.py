@@ -16,6 +16,7 @@ def plot_ion_images(
     cmap: str = "viridis",
     figsize: Optional[Tuple[float, float]] = None,
     show_axes: bool = True,
+    obsm_key: Optional[str] = None,
     label_obsm_key: str = "X_by_label",
 ) -> None:
     """
@@ -33,10 +34,10 @@ def plot_ion_images(
     msicube : MSICube
         The MSICube object.
     mz : float | str | list of float | list of str
-        The m/z value(s) to visualize. If strings matching
-        ``adata.uns[f"{label_obsm_key}_labels"]`` are provided, the aggregated
-        ion images stored in ``adata.obsm[label_obsm_key]`` are used instead of
-        raw peaks.
+        The m/z value(s) to visualize. If strings match aggregated label names
+        stored in ``adata.uns[f"{<obsm_key>}_labels"]`` (or ``label_obsm_key`` for
+        backward compatibility), the aggregated ion images stored in
+        ``adata.obsm[obsm_key]`` are used instead of raw peaks.
     samples : str or list of str
         The sample name(s) to visualize.
     share_intensity_scale : bool
@@ -50,9 +51,13 @@ def plot_ion_images(
         Custom figure size. If None, it is calculated automatically.
     show_axes : bool
         If True, prints X/Y coordinates on the image borders.
-    label_obsm_key : str
+    obsm_key : str, optional
         Key of ``adata.obsm`` storing aggregated ion images created by
-        :func:`aggregate_vars_by_label`.
+        :func:`aggregate_vars_by_label`. If ``None``, falls back to
+        ``label_obsm_key`` for backward compatibility.
+    label_obsm_key : str
+        Deprecated in favor of ``obsm_key``. Retained for backward compatibility
+        with earlier releases.
     """
     if msicube.adata is None:
         raise ValueError("MSICube.adata is None. Run extract_peak_matrix first.")
@@ -71,7 +76,16 @@ def plot_ion_images(
         target_samples = list(samples)
 
     # --- 2. Resolve feature indices (m/z or aggregated labels) ---
-    label_names = adata.uns.get(f"{label_obsm_key}_labels")
+    aggregated_key = obsm_key or label_obsm_key
+
+    if obsm_key is not None and obsm_key != label_obsm_key:
+        if label_obsm_key != "X_by_label":
+            raise ValueError(
+                "Both 'obsm_key' and 'label_obsm_key' were provided and differ. "
+                "Use only one to specify the aggregated matrix key."
+            )
+
+    label_names = adata.uns.get(f"{aggregated_key}_labels")
     label_lookup = {str(name): idx for idx, name in enumerate(label_names or [])}
 
     using_labels = (
@@ -86,20 +100,20 @@ def plot_ion_images(
         for feature in target_features:
             col_indices.append(label_lookup[str(feature)])
             actual_names.append(str(feature))
-        if f"{label_obsm_key}_labels" not in adata.uns:
+        if f"{aggregated_key}_labels" not in adata.uns:
             raise KeyError(
-                f"Aggregated labels not found in adata.uns['{label_obsm_key}_labels']"
+                f"Aggregated labels not found in adata.uns['{aggregated_key}_labels']"
             )
-        if label_obsm_key not in adata.obsm:
-            raise KeyError(f"Aggregated matrix '{label_obsm_key}' not found in adata.obsm")
-        data_matrix = adata.obsm[label_obsm_key]
+        if aggregated_key not in adata.obsm:
+            raise KeyError(f"Aggregated matrix '{aggregated_key}' not found in adata.obsm")
+        data_matrix = adata.obsm[aggregated_key]
     else:
         try:
             target_mzs = [float(feature) for feature in target_features]
         except (TypeError, ValueError) as e:
             raise ValueError(
                 "Features must be m/z values or label names present in "
-                f"adata.uns['{label_obsm_key}_labels']."
+                f"adata.uns['{aggregated_key}_labels']."
             ) from e
 
         available_mzs = adata.var["mz"].values

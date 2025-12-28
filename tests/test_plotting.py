@@ -185,8 +185,41 @@ def test_plot_ion_images_with_aggregated_labels(mock_show: MagicMock) -> None:
     with patch("matplotlib.pyplot.subplots", return_value=(dummy_fig, dummy_axis)), patch(
         "mpl_toolkits.axes_grid1.make_axes_locatable", return_value=DummyDivider()
     ):
-        cube.plot_ion_images(mz="g1", samples="s1", label_obsm_key="X_label_mean")
+        cube.plot_ion_images(mz="g1", samples="s1", obsm_key="X_label_mean")
 
     np.testing.assert_array_equal(dummy_axis.imshow_calls[0], np.array([[1.5, 4.5]]))
     assert dummy_axis.titles[0] == "s1\ng1"
+    assert mock_show.called
+
+
+@patch("matplotlib.pyplot.show")
+def test_plot_ion_images_with_custom_obsm_key(mock_show: MagicMock) -> None:
+    cube = MSICube(data_directory=".")
+    cube.adata = ad.AnnData(
+        X=np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
+        obs=pd.DataFrame({"sample": ["s1", "s1"]}, index=["p0", "p1"]),
+        var=pd.DataFrame(
+            {"mz": [100.0, 101.0, 102.0], "label": ["unlabeled", "region_1", "region_1"]},
+            index=["mz1", "mz2", "mz3"],
+        ),
+        obsm={"spatial": np.array([[0, 0], [1, 0]])},
+    )
+
+    cube.aggregate_vars_by_label("label", obsm_key="manual_annot")
+
+    dummy_axis = DummyAxis()
+    dummy_axis_2 = DummyAxis()
+    dummy_fig = DummyFigure()
+
+    axes = np.array([dummy_axis, dummy_axis_2], dtype=object)
+
+    with patch("matplotlib.pyplot.subplots", return_value=(dummy_fig, axes)), patch(
+        "mpl_toolkits.axes_grid1.make_axes_locatable", return_value=DummyDivider()
+    ):
+        cube.plot_ion_images(mz=["unlabeled", "region_1"], samples="s1", obsm_key="manual_annot")
+
+    np.testing.assert_array_equal(dummy_axis.imshow_calls[0], np.array([[1.0, 4.0]]))
+    np.testing.assert_array_equal(dummy_axis_2.imshow_calls[0], np.array([[2.5, 5.5]]))
+    assert dummy_axis.titles[0] == "unlabeled"
+    assert dummy_axis_2.titles[0] == "region_1"
     assert mock_show.called
