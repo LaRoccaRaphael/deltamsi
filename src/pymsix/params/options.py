@@ -289,6 +289,7 @@ class KendrickPlotOptions:
     # Paramètres de base Kendrick
     base: Union[str, float, Tuple[float, float]] = "CH2"
     mass_col: str = "mz"
+    kendrick_varm_key: Optional[str] = None
 
     # Axes et Style
     x_axis: str = "kendrick_mass"  # 'kendrick_mass' ou 'm_over_z'

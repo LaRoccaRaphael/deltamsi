@@ -170,6 +170,9 @@ def fit_ransac_linear_model(
     params: RecalParams,
 ) -> Any:
     """Fit error = a*mz + b on ROI hits using RANSAC. Returns model or None."""
+
+    from sklearn import linear_model
+
     hit_exp_mz = np.asarray(hit_exp_mz, dtype=float)
     hit_errors_da = np.asarray(hit_errors_da, dtype=float)
     roi_mask = np.asarray(roi_mask, dtype=bool)

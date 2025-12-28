@@ -17,6 +17,12 @@ from pymsix.plotting.spectrum import plot_mean_spectrum_windows
 from pymsix.processing.mean_spectrum import compute_mean_spectrum
 from pymsix.processing.combine_mean_spectra import combine_mean_spectra, Spectrum
 from pymsix.processing.peak_picking import peak_picking, extract_peak_matrix
+from pymsix.processing.aggregation import aggregate_vars_by_label, Agg
+from pymsix.processing.normalization import tic_normalize_msicube
+from pymsix.processing.colocalization import (
+    CosineColocParams,
+    compute_mz_cosine_colocalization,
+)
 
 from pymsix.processing.recalibration_core import (
     load_database_masses,
@@ -27,6 +33,7 @@ from pymsix.processing.recalibration_cli_clean import write_corrected_msi
 from pymsix.processing.recal_visu_clean import diagnostics_for_pixel, select_pixels
 
 from pymsix.processing.mass_clustering import cluster_masses_with_candidates
+from pymsix.processing.kendrick import compute_kendrick_varm
 from pymsix.plotting.plot_kendrick_cluster_mz import plot_kendrick_from_clustering
 
 from pymsix.params.options import (
@@ -56,6 +63,31 @@ logger = Logger()
 
 ScaleMode = Literal["all", "per_sample", "per_condition"]
 ScaleStats = Dict[Any, Tuple[np.ndarray, np.ndarray]]
+LowAction = Literal["keep", "nan", "zero", "clip"]
+HighAction = Literal["keep", "nan", "clip"]
+def _log1p_inplace_or_copy(X: Any, *, base: Optional[float] = None) -> Any:
+    """
+    Apply ``log1p`` to a dense or sparse matrix, mirroring Scanpy's behavior.
+
+    Sparse matrices are copied before mutation; dense inputs are modified in-place when
+    possible. If ``base`` is provided, intensities are scaled accordingly.
+    """
+
+    if sp.issparse(X):
+        X = X.copy()
+        X.data = np.log1p(X.data)
+        if base is not None:
+            X.data /= np.log(base)
+        return X
+
+    X_arr = np.asarray(X)
+    if not np.issubdtype(X_arr.dtype, np.floating):
+        X_arr = X_arr.astype(np.float32, copy=False)
+
+    np.log1p(X_arr, out=X_arr)
+    if base is not None:
+        X_arr /= np.log(base)
+    return X_arr
 
 
 class MSICube:
@@ -200,6 +232,131 @@ class MSICube:
         logger.info(f"AnnData loaded from {load_path} (format={file_format}).")
         return loaded_adata
 
+    def clip_or_mask_intensities(
+        self,
+        *,
+        low: Optional[float] = None,
+        high: Optional[float] = None,
+        low_action: LowAction = "nan",
+        high_action: HighAction = "clip",
+        layer: Optional[str] = None,
+        copy: bool = False,
+    ) -> Optional[ad.AnnData]:
+        """
+        Clip or mask intensity values stored in the MSI cube's AnnData object.
+
+        Parameters
+        ----------
+        low, high
+            Thresholds. If provided:
+              - values < ``low`` are handled by ``low_action``
+              - values > ``high`` are handled by ``high_action``
+        low_action
+            - "keep": do nothing
+            - "nan":  set values < low to ``NaN``
+            - "zero": set values < low to ``0``
+            - "clip": set values < low to ``low``
+        high_action
+            - "keep": do nothing
+            - "nan":  set values > high to ``NaN``
+            - "clip": set values > high to ``high``
+        layer
+            If ``None`` operate on ``adata.X`` else on ``adata.layers[layer]``.
+        copy
+            If ``True``, operate on a copy of :attr:`adata` and return it. Otherwise
+            modify the existing object in-place and return ``None``.
+
+        Notes (sparse)
+        --------------
+        - For sparse matrices, only stored (non-zero) entries are modified. Implicit
+          zeros stay zeros.
+        - Setting sparse entries to ``NaN`` is allowed but can break downstream
+          operations. If more arithmetic follows, prefer ``low_action="zero"`` and
+          ``high_action="clip"``.
+
+        Returns
+        -------
+        AnnData or None
+            The modified AnnData object when ``copy=True``; otherwise ``None``.
+        """
+
+        if self.adata is None:
+            raise ValueError("MSICube.adata is None. Run data extraction first.")
+
+        obj = self.adata.copy() if copy else self.adata
+
+        if layer is None:
+            X = obj.X
+        else:
+            if layer not in obj.layers:
+                raise KeyError(f"Layer '{layer}' not found in adata.layers.")
+            X = obj.layers[layer]
+
+        if low is None and high is None:
+            return obj if copy else None
+
+        if sp.issparse(X):
+            X2 = X.astype(np.float32, copy=True)
+            data = X2.data
+
+            if low is not None and low_action != "keep":
+                mask = data < low
+                if low_action == "nan":
+                    data[mask] = np.nan
+                elif low_action == "zero":
+                    data[mask] = 0.0
+                elif low_action == "clip":
+                    data[mask] = low
+
+            if high is not None and high_action != "keep":
+                mask = data > high
+                if high_action == "nan":
+                    data[mask] = np.nan
+                elif high_action == "clip":
+                    data[mask] = high
+
+            if low_action == "zero":
+                X2.eliminate_zeros()
+
+            X_out = X2
+
+        else:
+            X_arr = np.asarray(X, dtype=np.float32).copy()
+
+            if low is not None and low_action != "keep":
+                if low_action == "nan":
+                    X_arr[X_arr < low] = np.nan
+                elif low_action == "zero":
+                    X_arr[X_arr < low] = 0.0
+                elif low_action == "clip":
+                    X_arr[X_arr < low] = low
+
+            if high is not None and high_action != "keep":
+                if high_action == "nan":
+                    X_arr[X_arr > high] = np.nan
+                elif high_action == "clip":
+                    X_arr[X_arr > high] = high
+
+            X_out = X_arr
+
+        if layer is None:
+            obj.X = X_out
+        else:
+            obj.layers[layer] = X_out
+
+        obj.uns.setdefault("intensity_clipping", [])
+        obj.uns["intensity_clipping"].append(
+            {
+                "layer": layer,
+                "low": None if low is None else float(low),
+                "high": None if high is None else float(high),
+                "low_action": low_action,
+                "high_action": high_action,
+            }
+        )
+
+        return obj if copy else None
+
     @classmethod
     def from_saved_adata(
         cls,
@@ -231,6 +388,137 @@ class MSICube:
         cube = cls(data_directory=data_directory)
         cube.load_adata(adata_path=adata_path, file_format=file_format, **kwargs)
         return cube
+
+    def log1p_intensity(
+        self,
+        *,
+        base: Optional[float] = None,
+        layer: Optional[str] = None,
+        copy: bool = False,
+    ) -> Optional["MSICube"]:
+        """
+        Apply Scanpy-like ``log1p`` transformation to the MSI intensity matrix.
+
+        Parameters
+        ----------
+        base : float | None
+            If provided, divide by ``log(base)`` to change the logarithm base.
+        layer : str | None
+            Target a specific ``adata.layers`` entry instead of ``adata.X``.
+        copy : bool
+            If ``True``, return a new :class:`MSICube` instance with transformed data.
+            Otherwise, modify the object in-place and return ``None``.
+
+        Returns
+        -------
+        MSICube | None
+            A new MSICube when ``copy=True``; otherwise ``None``.
+
+        Raises
+        ------
+        ValueError
+            If ``adata`` is missing on the MSICube instance.
+        KeyError
+            If a specified ``layer`` is not found.
+        """
+
+        if self.adata is None:
+            raise ValueError("MSICube.adata is None. Run data extraction first.")
+
+        target_cube = MSICube(self.data_directory) if copy else self
+        target_cube.org_imzml_path_dict = self.org_imzml_path_dict.copy()
+        target_cube.adata = self.adata.copy() if copy else self.adata
+
+        adata_obj = target_cube.adata
+
+        if layer is None:
+            if adata_obj.X is None:
+                raise ValueError("MSICube.adata.X is None.")
+            adata_obj.X = _log1p_inplace_or_copy(adata_obj.X, base=base)
+        else:
+            if layer not in adata_obj.layers:
+                raise KeyError(f"Layer '{layer}' not found in adata.layers")
+            adata_obj.layers[layer] = _log1p_inplace_or_copy(
+                adata_obj.layers[layer], base=base
+            )
+
+        adata_obj.uns.setdefault("log1p", {})
+        adata_obj.uns["log1p"]["base"] = base
+
+        return target_cube if copy else None
+
+    def compute_cosine_colocalization(
+        self, *, params: CosineColocParams = CosineColocParams()
+    ) -> Tuple[Union[np.ndarray, sp.csr_matrix], Optional[np.ndarray]]:
+        """Compute cosine similarity between ion images stored on this cube.
+
+        This is a convenience wrapper around
+        :func:`pymsix.processing.colocalization.compute_mz_cosine_colocalization`.
+        The resulting similarity matrix is stored in ``adata.varp`` when
+        ``params.store_varp_key`` is provided, and optional keep masks are stored in
+        ``adata.var``.
+        """
+
+        if self.adata is None:
+            raise ValueError("MSICube.adata is None. Run data extraction first.")
+
+        return compute_mz_cosine_colocalization(self, params=params)
+
+    def aggregate_vars_by_label(
+        self,
+        label_col: str,
+        *,
+        layer: Optional[str] = None,
+        agg: Agg = "mean",
+        obsm_key: str = "X_by_label",
+        dropna: bool = True,
+        keep_order: bool = True,
+        as_df: bool = False,
+        dtype: Union[np.dtype, type] = np.float32,
+    ) -> pd.Index:
+        """
+        Aggregate variables that share the same label in ``adata.var[label_col]``.
+
+        The resulting ion images are stored in ``adata.obsm[obsm_key]`` with column
+        order recorded in ``adata.uns[f"{obsm_key}_labels"]``.
+
+        Parameters
+        ----------
+        label_col : str
+            Column in ``adata.var`` that contains the grouping labels.
+        layer : str | None, default None
+            Aggregate a specific layer instead of ``adata.X``.
+        agg : {"mean", "median", "max"}, default "mean"
+            Aggregation strategy across variables with the same label.
+        obsm_key : str, default "X_by_label"
+            Key for the aggregated matrix in ``adata.obsm``.
+        dropna : bool, default True
+            Drop variables with missing labels if ``True``; otherwise replace NaN labels
+            with "NA".
+        keep_order : bool, default True
+            Preserve the first occurrence order of labels instead of sorting.
+        as_df : bool, default False
+            Store aggregated values as a DataFrame instead of a NumPy array.
+        dtype : dtype or type, default numpy.float32
+            Data type of the aggregated matrix.
+
+        Returns
+        -------
+        pandas.Index
+            Index of the aggregated label names, named after ``label_col``.
+        """
+
+        return aggregate_vars_by_label(
+            self,
+            label_col,
+            layer=layer,
+            agg=agg,
+            obsm_key=obsm_key,
+            dropna=dropna,
+            keep_order=keep_order,
+            as_df=as_df,
+            dtype=dtype,
+        )
 
     def _scan_imzml_files(self, directory: str) -> None:
         """
@@ -828,41 +1116,67 @@ class MSICube:
 
         return stats if return_stats else None
 
-    def plot_ion_images(
+    def tic_normalize(
         self,
-        mz_list: Sequence[float],
-        sample_name: Optional[str] = None,
-        mode: Literal["by_sample", "by_condition"] = "by_sample",  # NOUVEL ARGUMENT
-        **kwargs: Any,
-    ) -> None:
+        *,
+        target_sum: float = 1e6,
+        layer: Optional[str] = None,
+        store_tic_in_obs: Optional[str] = "tic",
+        copy: bool = False,
+    ) -> Optional["MSICube"]:
         """
-        Plots ion images for a specific sample.
-
-        This is a wrapper for msix.plotting.ion_images.plot_ion_images.
+        Apply Total Ion Current (TIC) normalization to the cube's intensity matrix.
 
         Parameters
         ----------
-        sample_name : str
-            The name of the sample to visualize.
-        **kwargs
-            Arguments passed to the plotting function (e.g., mz_list, ncols, cmap, vmin, vmax).
-        """
-        # Supprimer 'var_indices' si l'utilisateur l'a mis dans kwargs
-        if "var_indices" in kwargs:
-            logger.warning(
-                "Ignoring 'var_indices' in kwargs. MSICube.plot_ion_images only uses 'mz_list'."
-            )
-            del kwargs["var_indices"]
+        target_sum : float, default 1e6
+            After normalization, each spectrum sums to ``target_sum``.
+        layer : str | None, default None
+            If ``None``, normalize ``adata.X``; otherwise, normalize ``adata.layers[layer]``.
+        store_tic_in_obs : str | None, default "tic"
+            Name of the ``adata.obs`` column where pre-normalization TIC values are stored.
+            If ``None``, TIC values are not stored.
+        copy : bool, default False
+            If ``True``, operate on and return a deep copy of the cube. Otherwise, modify
+            in place and return ``None``.
 
-        # Appel à la fonction externe plot_ion_images
-        # Nous transmettons tous les arguments de manière explicite.
-        plot_ion_images(
+        Returns
+        -------
+        MSICube | None
+            A normalized copy when ``copy`` is ``True``; otherwise ``None``.
+        """
+
+        return tic_normalize_msicube(
             self,
-            sample_name=sample_name,
-            mode=mode,
-            mz_list=mz_list,  # Transmis en mot-clé pour éviter toute confusion positionnelle
-            **kwargs,
+            target_sum=target_sum,
+            layer=layer,
+            store_tic_in_obs=store_tic_in_obs,
+            copy=copy,
         )
+
+    def plot_ion_images(
+        self,
+        mz: Union[float, str, Sequence[Union[float, str]]],
+        samples: Optional[Union[str, Sequence[str]]] = None,
+        **kwargs: Any,
+    ) -> None:
+        """
+        Wrapper to plot ion images.
+
+        Args:
+            mz: One or multiple m/z values or aggregated label names.
+            samples: One or multiple sample names. If None, uses all available samples.
+            **kwargs: Arguments passed to plot_ion_images (cmap, share_intensity_scale,
+                obsm_key, etc.)
+        """
+        if self.adata is None:
+            raise ValueError("AnnData is empty.")
+
+        # Default to all samples if None provided
+        if samples is None:
+            samples = self.adata.obs['sample'].unique().tolist()
+
+        plot_ion_images(self, mz=mz, samples=samples, **kwargs)
 
     def plot_mean_spectrum_windows(
         self,
@@ -1174,6 +1488,78 @@ class MSICube:
 
         logger.info(f"Clustering terminé: {res['n_clusters']} clusters trouvés.")
 
+    def compute_kendrick_coordinates(
+        self,
+        *,
+        mz_key: str = "mz",
+        base: Union[str, float, Tuple[float, float]] = "CH2",
+        kmd_mode: Literal["fraction", "defect"] = "fraction",
+        varm_key: Optional[str] = None,
+        store_1d_in_var: bool = False,
+        var_prefix: str = "kendrick",
+    ) -> str:
+        """Calcule et stocke les coordonnées de Kendrick dans ``adata.varm``.
+
+        Args:
+            mz_key: Nom de la colonne de masses dans ``adata.var``.
+            base: Base Kendrick (formule chimique, masse exacte ou tuple (exact, nominal)).
+            kmd_mode: Mode de calcul du défaut de masse (``"fraction"`` ou ``"defect"``).
+            varm_key: Nom de la clé de sortie dans ``adata.varm``. Généré automatiquement si None.
+            store_1d_in_var: Si True, stocke aussi KM/KMD comme colonnes 1D dans ``adata.var``.
+            var_prefix: Préfixe pour les colonnes 1D optionnelles.
+
+        Returns:
+            La clé ``varm`` utilisée pour stocker les coordonnées calculées.
+        """
+
+        if self.adata is None:
+            raise ValueError("L'objet AnnData est vide. Impossible de calculer les coordonnées Kendrick.")
+
+        return compute_kendrick_varm(
+            self.adata,
+            mz_key=mz_key,
+            base=base,
+            kmd_mode=kmd_mode,
+            varm_key=varm_key,
+            store_1d_in_var=store_1d_in_var,
+            var_prefix=var_prefix,
+        )
+
+    def manual_label_kendrick(
+        self,
+        *,
+        varm_key: str,
+        label_key: str = "manual_label",
+        default_label: str = "unlabeled",
+        mz_key: Optional[str] = "mz",
+        coord_cols: Tuple[int, int] = (0, 1),
+        dragmode: str = "lasso",
+        point_size: int = 6,
+        height: int = 650,
+        max_points_warn: int = 120_000,
+    ):
+        """Launch an interactive manual labeling widget in Kendrick space.
+
+        Returns the ``(ui, state)`` tuple from
+        :func:`pymsix.plotting.kendrick_manual_label.manual_label_vars_from_kendrick`.
+        Requires the optional ``viz`` dependencies (``plotly`` and ``ipywidgets``).
+        """
+
+        from pymsix.plotting.kendrick_manual_label import manual_label_vars_from_kendrick
+
+        return manual_label_vars_from_kendrick(
+            self,
+            varm_key=varm_key,
+            label_key=label_key,
+            default_label=default_label,
+            mz_key=mz_key,
+            coord_cols=coord_cols,
+            dragmode=dragmode,
+            point_size=point_size,
+            height=height,
+            max_points_warn=max_points_warn,
+        )
+
     def plot_kendrick(
         self, options: Optional[KendrickPlotOptions] = None, **kwargs: Any
     ) -> Tuple[plt.Figure, Union[List[plt.Axes], plt.Axes], pd.DataFrame]:
@@ -1209,7 +1595,11 @@ class MSICube:
             )
 
         # Récupération des masses (mz)
-        masses = self.adata.var["mz"].values
+        if options.mass_col not in self.adata.var:
+            raise ValueError(
+                f"La colonne '{options.mass_col}' est absente de adata.var. Peak picking requis."
+            )
+        masses = self.adata.var[options.mass_col].values
 
         # Reconstruction du dictionnaire clustering_result attendu par la fonction de plot
         clustering_result = {"labels": self.adata.var["mass_cluster"].values}
@@ -1226,9 +1616,11 @@ class MSICube:
         return plot_kendrick_from_clustering(
             masses=masses,
             clustering_result=clustering_result,
+            adata=self.adata,
+            kendrick_varm_key=options.kendrick_varm_key,
             family=family,
             base=options.base,
-            mass_col="mz",  # Nom utilisé dans le DataFrame interne pour les axes
+            mass_col=options.mass_col,  # Nom utilisé dans le DataFrame interne pour les axes
             x_axis=options.x_axis,
             kmd_mode=options.kmd_mode,
             point_size=options.point_size,

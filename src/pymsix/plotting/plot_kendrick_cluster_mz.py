@@ -1,144 +1,110 @@
 # --- Kendrick plotting from cluster_masses_with_candidates result ---
 
 from __future__ import annotations
-import re
+
+import logging
+from typing import Sequence, Mapping, Optional, Tuple, List
+
+import anndata as ad
 import numpy as np
 from numpy.typing import NDArray
 import pandas as pd
 import matplotlib.pyplot as plt
-from typing import Sequence, Mapping, Optional, Tuple, List, TypedDict
 
-# Monoisotopic & nominal (integer) masses for base parsing
-MONO = {
-    "H": 1.00782503223,
-    "C": 12.0,
-    "N": 14.00307400443,
-    "O": 15.99491461957,
-    "S": 31.9720711744,
-    "P": 30.97376199842,
-    "F": 18.99840316273,
-    "Cl": 34.968852682,
-    "Br": 78.9183376,
-    "I": 126.9044719,
-}
-NOMI = {
-    "H": 1,
-    "C": 12,
-    "N": 14,
-    "O": 16,
-    "S": 32,
-    "P": 31,
-    "F": 19,
-    "Cl": 35,
-    "Br": 79,
-    "I": 127,
-}
+from pymsix.processing.kendrick import compute_kendrick_varm, default_kendrick_varm_key
 
-# ---- base utilities ----
-_FORM_RX = re.compile(r"([A-Z][a-z]?)(\d*)")
+logger = logging.getLogger(__name__)
 
 
-class KendrickCoords(TypedDict):
-    KM: NDArray[np.floating]
-    KMD_fraction: NDArray[np.floating]
-    KMD_defect: NDArray[np.floating]
-    KM_int_floor: NDArray[np.integer]
-    KM_int_round: NDArray[np.integer]
-    scale: float
-    base_exact: float
-    base_nominal: float
-
-
-def _parse_formula_to_mass(formula: str) -> Tuple[float, float]:
-    """
-    Return (exact_mass, nominal_mass) for a simple empirical formula like 'CH2' or 'C2H3N1O1'.
-    No parentheses/hydrates; '.' is ignored.
-    """
-    s = str(formula).replace("·", "").replace(".", "").strip()
-    if not s:
-        raise ValueError("Empty base formula.")
-    m_exact = 0.0
-    m_nom = 0.0
-    for el, num in _FORM_RX.findall(s):
-        n = int(num) if num else 1
-        if el not in MONO or el not in NOMI:
-            raise ValueError(f"Unknown element in base: {el}")
-        m_exact += MONO[el] * n
-        m_nom += NOMI[el] * n
-    return float(m_exact), float(m_nom)
-
-
-def _base_masses(base: str | float | Tuple[float, float]) -> Tuple[float, float]:
-    """
-    Accept:
-      - string formula (e.g., 'CH2')
-      - float (exact base mass) -> nominal inferred by rounding
-      - (exact, nominal) tuple
-    Returns (exact, nominal).
-    """
-    if isinstance(base, tuple) and len(base) == 2:
-        return (float(base[0]), float(base[1]))
-    if isinstance(base, (int, float)):
-        m_exact = float(base)
-        return (m_exact, round(m_exact))
-    if isinstance(base, str):
-        return _parse_formula_to_mass(base)
-    raise ValueError(
-        "Unsupported 'base' type. Use 'CH2', a float, or (exact, nominal)."
-    )
-
-
-def kendrick_coords(
-    masses: Sequence[float],
+def _ensure_kendrick_coordinates(
+    adata: ad.AnnData,
+    *,
     base: str | float | Tuple[float, float],
-    kmd_mode: str = "fraction",
-) -> KendrickCoords:
+    kmd_mode: str,
+    kendrick_varm_key: Optional[str],
+    mz_key: str,
+) -> tuple[str, NDArray[np.floating], Optional[dict]]:
     """
-    Compute Kendrick Mass (KM) and KMD for given masses and base.
-    kmd_mode:
-      - 'fraction' : KMD_f = KM - floor(KM) in [0,1)
-      - 'defect'   : KMD_d = round(KM) - KM  in [-0.5,0.5]
-    Returns dict with arrays: KM, KMD_fraction, KMD_defect, KM_int_floor, KM_int_round
+    Ensure that Kendrick coordinates exist in ``adata.varm`` and return them.
+
+    If the requested varm key is missing, coordinates are computed automatically using
+    :func:`compute_kendrick_varm` (default base ``CH2``) and stored before being returned.
     """
-    masses_arr: NDArray[np.floating] = np.asarray(masses, dtype=float)
 
-    m_exact, m_nom = _base_masses(base)
-    scale = m_nom / m_exact
+    if kmd_mode not in {"fraction", "defect"}:
+        raise ValueError("kmd_mode must be 'fraction' or 'defect'")
 
-    KM = masses_arr * scale
-    KM_floor = np.floor(KM)
-    KM_round = np.round(KM)
+    target_key = kendrick_varm_key or default_kendrick_varm_key(base, kmd_mode)
 
-    KMD_fraction = KM - KM_floor
-    KMD_defect = KM_round - KM
+    if target_key not in adata.varm:
+        logger.info(
+            "Kendrick coordinates '%s' not found; computing them with base %s.",
+            target_key,
+            base,
+        )
+        target_key = compute_kendrick_varm(
+            adata,
+            mz_key=mz_key,
+            base=base,
+            kmd_mode=kmd_mode,
+            varm_key=target_key,
+        )
 
-    out: KendrickCoords = {
-        "KM": KM,
-        "KMD_fraction": KMD_fraction,
-        "KMD_defect": KMD_defect,
-        "KM_int_floor": KM_floor.astype(int),
-        "KM_int_round": KM_round.astype(int),
-        "scale": scale,
-        "base_exact": m_exact,
-        "base_nominal": m_nom,
-    }
-    return out
+    coords: NDArray[np.floating] = np.asarray(adata.varm[target_key])
+    if coords.ndim != 2 or coords.shape[1] < 2:
+        raise ValueError(
+            f"adata.varm['{target_key}'] must be a 2D array with KM and KMD columns"
+        )
+
+    info = adata.uns.get(f"{target_key}_info") if hasattr(adata, "uns") else None
+    if info is not None:
+        stored_mode = info.get("kmd_mode")
+        if stored_mode and stored_mode != kmd_mode:
+            raise ValueError(
+                f"adata.varm['{target_key}'] was computed with kmd_mode='{stored_mode}',"
+                f" but kmd_mode='{kmd_mode}' was requested."
+            )
+    return target_key, coords, info
 
 
-# ---- dataframe builder from clustering result ----
 def kendrick_df_from_clustering(
     masses: Sequence[float],
     clustering_result: Mapping[str, object],
     *,
+    adata: ad.AnnData,
     family: Optional[Sequence[object]] = None,
     base: str | float | Tuple[float, float] = "CH2",
+    kmd_mode: str = "fraction",
+    kendrick_varm_key: Optional[str] = None,
+    mz_key: str = "mz",
     mass_col: str = "exact_molecular_weight",
 ) -> pd.DataFrame:
+    """
+    Build a DataFrame combining clustering labels and pre-computed Kendrick coordinates.
+
+    Kendrick coordinates are fetched from ``adata.varm``. If they are missing, they are
+    computed automatically with :func:`compute_kendrick_varm` using the provided base
+    (``CH2`` by default).
+    """
+
     masses_arr: NDArray[np.floating] = np.asarray(masses, dtype=float)
     labels: NDArray[np.integer] = np.asarray(clustering_result["labels"], dtype=int)
 
     if masses_arr.size != labels.size:
         raise ValueError("masses and clustering_result['labels'] must have same length")
+
+    varm_key_used, coords, info = _ensure_kendrick_coordinates(
+        adata,
+        base=base,
+        kmd_mode=kmd_mode,
+        kendrick_varm_key=kendrick_varm_key,
+        mz_key=mz_key,
+    )
+
+    if coords.shape[0] != masses_arr.size:
+        raise ValueError(
+            "Kendrick coordinates length does not match the number of masses/variables."
+        )
 
     df = pd.DataFrame({mass_col: masses_arr, "cluster": labels})
 
@@ -148,18 +114,26 @@ def kendrick_df_from_clustering(
             raise ValueError("'family' must have same length as masses")
         df["family"] = fam_arr
 
-    # add Kendrick columns (both modes; you can choose which to plot)
-    kc = kendrick_coords(masses, base=base)
+    df["kendrick_mass"] = coords[:, 0]
+    if kmd_mode == "fraction":
+        df["kmd_fraction"] = coords[:, 1]
+        df["kmd_defect"] = np.nan
+    else:
+        df["kmd_fraction"] = np.nan
+        df["kmd_defect"] = coords[:, 1]
 
-    df["kendrick_mass"] = kc["KM"]
-    df["kmd_fraction"] = kc["KMD_fraction"]
-    df["kmd_defect"] = kc["KMD_defect"]
-
-    df.attrs["kendrick_info"] = {
-        "scale": kc["scale"],
-        "base_exact": kc["base_exact"],
-        "base_nominal": kc["base_nominal"],
+    kendrick_info = {
+        "varm_key": varm_key_used,
+        "kmd_mode": kmd_mode,
     }
+    if info:
+        kendrick_info.update({
+            "scale": info.get("scale"),
+            "base_exact": info.get("base_exact"),
+            "base_nominal": info.get("base_nominal"),
+            "base": info.get("base", base),
+        })
+    df.attrs["kendrick_info"] = {k: v for k, v in kendrick_info.items() if v is not None}
     return df
 
 
@@ -168,6 +142,8 @@ def plot_kendrick_from_clustering(
     masses: Sequence[float],
     clustering_result: Mapping[str, object],
     *,
+    adata: ad.AnnData,
+    kendrick_varm_key: Optional[str] = None,
     family: Optional[Sequence[object]] = None,
     base: str | float | Tuple[float, float] = "CH2",
     mass_col: str = "exact_molecular_weight",
@@ -193,11 +169,22 @@ def plot_kendrick_from_clustering(
 ) -> tuple[plt.Figure, list[plt.Axes] | plt.Axes, pd.DataFrame]:
     """
     Build Kendrick plots directly from cluster_masses_with_candidates result.
+
+    Kendrick coordinates are expected in ``adata.varm``; if the requested key is
+    absent, they are computed automatically from ``adata.var`` using the provided base.
     Returns (fig, axes, df_used), where df_used is the filtered table with Kendrick columns.
     """
     # Build full DF
     df = kendrick_df_from_clustering(
-        masses, clustering_result, family=family, base=base, mass_col=mass_col
+        masses,
+        clustering_result,
+        adata=adata,
+        kendrick_varm_key=kendrick_varm_key,
+        family=family,
+        base=base,
+        kmd_mode=kmd_mode,
+        mz_key=mass_col,
+        mass_col=mass_col,
     )
 
     # Apply cluster filters
