@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import scipy.sparse as sp
 from typing import Optional, Callable, Tuple, Union, Any, Dict
 
 
@@ -377,6 +378,206 @@ def cluster_masses_with_candidates(
 
     result = {
         "labels": labels,
+        "n_clusters": n_clusters,
+        "n_minus1": n_minus1,
+        "compression": compression,
+        "edges": edges_df,
+    }
+    if return_graph:
+        result["graph"] = g
+    return result
+
+
+def cluster_masses_from_colocalization(
+    coloc_matrix: Union[np.ndarray, sp.spmatrix],
+    *,
+    keep_mask: Optional[np.ndarray] = None,
+    resolution: float = 1.0,
+    edge_max_delta_cosine: Optional[float] = None,
+    knn_k: Optional[int] = None,
+    knn_mode: str = "union",
+    return_graph: bool = False,
+) -> dict[str, object]:
+    """Cluster m/z values using a cosine colocalization matrix and Leiden.
+
+    This function is analogous to :func:`cluster_masses_with_candidates` but
+    operates directly on a cosine colocalization matrix (e.g., the output of
+    :func:`pymsix.processing.colocalization.compute_mz_cosine_colocalization`).
+
+    Parameters
+    ----------
+    coloc_matrix : np.ndarray | scipy.sparse.spmatrix
+        Square matrix of cosine similarities between ions. Only the upper
+        triangle is used.
+    keep_mask : np.ndarray | None
+        Optional boolean mask of ions to include in the clustering. When
+        provided, labels for excluded ions are set to ``-1``.
+    resolution : float
+        Leiden resolution_parameter.
+    edge_max_delta_cosine : float | None
+        Minimum cosine similarity required to keep an edge. Edges with cosine
+        smaller than this value are discarded.
+    knn_k : int | None
+        If provided, retain only the top-k neighbors per node using
+        :func:`_prune_edges_knn_df`.
+    knn_mode : {"union", "mutual"}
+        k-NN pruning mode; see :func:`_prune_edges_knn_df`.
+    return_graph : bool
+        If True, return the igraph Graph object built on the filtered edges.
+
+    Returns
+    -------
+    result : dict
+        {
+          "labels": np.ndarray of shape (n,), with singleton clusters set to -1
+                       and excluded nodes (from ``keep_mask``) also set to -1,
+          "n_clusters": int (includes -1 as one cluster),
+          "n_minus1": int (count of nodes labeled -1),
+          "compression": float (n_clusters / n_samples),
+          "edges": pd.DataFrame with columns ["i", "j", "cosine", "weight"],
+          "graph": igraph.Graph (only if return_graph=True)
+        }
+    """
+
+    if resolution <= 0:
+        raise ValueError("resolution must be positive.")
+    if knn_k is not None and knn_k < 0:
+        raise ValueError("knn_k cannot be negative.")
+    if knn_mode not in ["union", "mutual"]:
+        raise ValueError("knn_mode must be 'union' or 'mutual'.")
+
+    if coloc_matrix.shape[0] != coloc_matrix.shape[1]:
+        raise ValueError("coloc_matrix must be square.")
+
+    n_total = coloc_matrix.shape[0]
+    labels_full = np.full(n_total, -1, dtype=int)
+
+    if keep_mask is None:
+        keep_mask = np.ones(n_total, dtype=bool)
+    else:
+        keep_mask = np.asarray(keep_mask, dtype=bool)
+        if keep_mask.shape[0] != n_total:
+            raise ValueError(
+                f"keep_mask must have length {n_total}, got {keep_mask.shape[0]}"
+            )
+
+    active_idx = np.flatnonzero(keep_mask)
+    n_active = active_idx.size
+
+    if n_active == 0:
+        uniq = np.unique(labels_full)
+        return {
+            "labels": labels_full,
+            "n_clusters": int(uniq.size),
+            "n_minus1": int((labels_full == -1).sum()),
+            "compression": float(uniq.size) / float(n_total),
+            "edges": pd.DataFrame(columns=["i", "j", "cosine", "weight"]),
+            **({"graph": None} if return_graph else {}),
+        }
+
+    if sp.issparse(coloc_matrix):
+        S_active = coloc_matrix.tocsr()[active_idx][:, active_idx]
+    else:
+        S_active = np.asarray(coloc_matrix)[np.ix_(active_idx, active_idx)]
+
+    # Build edges from the upper triangle
+    rows = []
+    threshold = edge_max_delta_cosine
+
+    if sp.issparse(S_active):
+        coo = S_active.tocoo()
+        for i, j, val in zip(coo.row, coo.col, coo.data):
+            if i >= j:
+                continue
+            if threshold is not None and float(val) < float(threshold):
+                continue
+            rows.append({"i": int(i), "j": int(j), "cosine": float(val), "weight": float(val)})
+    else:
+        tri = np.triu_indices(n_active, k=1)
+        vals = S_active[tri]
+        mask = np.ones(vals.shape, dtype=bool)
+        if threshold is not None:
+            mask &= vals >= float(threshold)
+        if mask.any():
+            i_sel = tri[0][mask]
+            j_sel = tri[1][mask]
+            v_sel = vals[mask]
+            rows = [
+                {"i": int(i), "j": int(j), "cosine": float(v), "weight": float(v)}
+                for i, j, v in zip(i_sel, j_sel, v_sel)
+            ]
+
+    edges_df_local = pd.DataFrame(rows)
+
+    if edges_df_local.empty:
+        labels_full[active_idx] = -1
+        uniq = np.unique(labels_full)
+        return {
+            "labels": labels_full,
+            "n_clusters": int(uniq.size),
+            "n_minus1": int((labels_full == -1).sum()),
+            "compression": float(uniq.size) / float(n_total),
+            "edges": pd.DataFrame(columns=["i", "j", "cosine", "weight"]),
+            **({"graph": None} if return_graph else {}),
+        }
+
+    if knn_k is not None and knn_k > 0:
+        edges_df_local = _prune_edges_knn_df(
+            n_nodes=n_active,
+            edges_df=edges_df_local,
+            k=int(knn_k),
+            mode=str(knn_mode).lower(),
+            weight_col="weight",
+            err_col="err",  # columns missing -> default zeros in helper
+            score_col="cand_score",
+            dm_col="dm",
+        )
+        if edges_df_local.empty:
+            labels_full[active_idx] = -1
+            uniq = np.unique(labels_full)
+            return {
+                "labels": labels_full,
+                "n_clusters": int(uniq.size),
+                "n_minus1": int((labels_full == -1).sum()),
+                "compression": float(uniq.size) / float(n_total),
+                "edges": pd.DataFrame(columns=["i", "j", "cosine", "weight"]),
+                **({"graph": None} if return_graph else {}),
+            }
+
+    try:
+        import igraph as ig
+        import leidenalg as la
+    except Exception as e:
+        raise ImportError(
+            "Leiden requires 'python-igraph' and 'leidenalg', which are installed "
+            "with pymsix. Ensure their system dependencies (e.g., igraph shared "
+            "libraries) are available on your platform."
+        ) from e
+
+    g = ig.Graph(n=n_active, edges=list(zip(edges_df_local["i"].tolist(), edges_df_local["j"].tolist())))
+    g.es["weight"] = edges_df_local["weight"].astype(float).tolist()
+
+    part = la.find_partition(
+        g,
+        la.RBConfigurationVertexPartition,
+        weights="weight",
+        resolution_parameter=float(resolution),
+    )
+    labels_active = np.array(part.membership, dtype=int)
+    labels_active = _singletons_to_minus1(labels_active)
+
+    labels_full[active_idx] = labels_active
+    n_clusters = int(np.unique(labels_full).size)
+    n_minus1 = int((labels_full == -1).sum())
+    compression = float(n_clusters) / float(n_total)
+
+    edges_df = edges_df_local.copy()
+    edges_df["i"] = active_idx[edges_df_local["i"].to_numpy(int)]
+    edges_df["j"] = active_idx[edges_df_local["j"].to_numpy(int)]
+    edges_df = edges_df[["i", "j", "cosine", "weight"]]
+
+    result = {
+        "labels": labels_full,
         "n_clusters": n_clusters,
         "n_minus1": n_minus1,
         "compression": compression,
