@@ -23,6 +23,7 @@ from pymsix.processing.colocalization import (
     CosineColocParams,
     compute_mz_cosine_colocalization,
 )
+from pymsix.processing.spatial_chaos import compute_spatial_chaos_matrix
 
 from pymsix.processing.recalibration_core import (
     load_database_masses,
@@ -1177,6 +1178,49 @@ class MSICube:
             samples = self.adata.obs['sample'].unique().tolist()
 
         plot_ion_images(self, mz=mz, samples=samples, **kwargs)
+
+    def compute_spatial_chaos_scores(
+        self,
+        *,
+        layer: Optional[str] = None,
+        obsm_key: str = "spatial",
+        sample_key: str = "sample",
+        n_thresholds: int = 30,
+        varm_key: str = "spatial_chaos",
+    ) -> np.ndarray:
+        """
+        Compute the spatial chaos score for every ion image and MSI sample.
+
+        The resulting matrix has shape ``(n_vars, n_samples)`` and is stored in
+        ``adata.varm[varm_key]``. Metadata describing the computation is
+        recorded under ``adata.uns['spatial_chaos']``.
+        """
+
+        if self.adata is None:
+            raise ValueError("AnnData is empty. Run data extraction first.")
+
+        chaos, samples = compute_spatial_chaos_matrix(
+            self.adata,
+            layer=layer,
+            obsm_key=obsm_key,
+            sample_key=sample_key,
+            n_thresholds=n_thresholds,
+        )
+
+        self.adata.varm[varm_key] = chaos
+        self.adata.uns.setdefault("spatial_chaos", {})
+        self.adata.uns["spatial_chaos"].update(
+            {
+                "samples": list(samples),
+                "sample_key": sample_key,
+                "obsm_key": obsm_key,
+                "layer": layer,
+                "n_thresholds": int(n_thresholds),
+                "varm_key": varm_key,
+            }
+        )
+
+        return chaos
 
     def plot_mean_spectrum_windows(
         self,
