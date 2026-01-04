@@ -331,6 +331,61 @@ def test_clip_or_mask_intensities_move_low_action(mock_imzml_data: str) -> None:
     assert cube.adata.uns["intensity_clipping"][0]["low_action"] == "move"
 
 
+def test_clip_or_mask_intensities_move_sparse(mock_imzml_data: str) -> None:
+    """Move low intensities for sparse matrices and keep the shifted result."""
+
+    cube = MSICube(data_directory=mock_imzml_data)
+    cube.adata = ad.AnnData(
+        X=sp.csr_matrix(np.array([[0.1, 1.2], [0.6, 0.8]], dtype=float)),
+        obs=pd.DataFrame(index=["p1", "p2"]),
+        var=pd.DataFrame(index=["mz1", "mz2"]),
+    )
+
+    cube.clip_or_mask_intensities(
+        low=0.5, high=0.6, low_action="move", high_action="clip"
+    )
+
+    assert cube.adata is not None
+    np.testing.assert_allclose(
+        cube.adata.X.toarray(),
+        np.array([[0.0, 0.6], [0.1, 0.3]], dtype=np.float32),
+        atol=1e-6,
+    )
+    assert cube.adata.uns["intensity_clipping"][0]["low_action"] == "move"
+
+
+def test_clip_or_mask_intensities_move_sparse_new_layer(mock_imzml_data: str) -> None:
+    """Write moved sparse intensities into a new layer without mutating X."""
+
+    cube = MSICube(data_directory=mock_imzml_data)
+    cube.adata = ad.AnnData(
+        X=sp.csr_matrix(np.array([[0.1, 1.2], [0.6, 0.8]], dtype=float)),
+        obs=pd.DataFrame(index=["p1", "p2"]),
+        var=pd.DataFrame(index=["mz1", "mz2"]),
+    )
+
+    cube.clip_or_mask_intensities(
+        low=0.5,
+        high=0.6,
+        low_action="move",
+        high_action="clip",
+        result_layer="shifted",
+    )
+
+    assert cube.adata is not None
+    np.testing.assert_allclose(
+        cube.adata.layers["shifted"].toarray(),
+        np.array([[0.0, 0.6], [0.1, 0.3]], dtype=np.float32),
+        atol=1e-6,
+    )
+    np.testing.assert_allclose(
+        cube.adata.X.toarray(),
+        np.array([[0.1, 1.2], [0.6, 0.8]], dtype=np.float32),
+        atol=1e-6,
+    )
+    assert cube.adata.uns["intensity_clipping"][0]["result_layer"] == "shifted"
+
+
 def test_clip_or_mask_intensities_layer_copy(mock_imzml_data: str) -> None:
     """Operate on a specific layer and ensure copy keeps the original untouched."""
 
