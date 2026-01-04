@@ -305,13 +305,13 @@ class MSICube:
             return obj if copy else None
 
         if sp.issparse(X):
-            X2 = X.astype(np.float32, copy=True)
-            data = X2.data
+            X_out = X.astype(np.float32, copy=True)
+            data = X_out.data
 
             if low_action == "move":
                 if low is None:
                     raise ValueError("low must be set when low_action='move'")
-                data -= low
+                np.subtract(data, low, out=data)
                 data[data < 0] = 0.0
             elif low is not None and low_action != "keep":
                 mask = data < low
@@ -329,10 +329,9 @@ class MSICube:
                 elif high_action == "clip":
                     data[mask] = high
 
+            X_out.data = data
             if low_action in {"zero", "move"}:
-                X2.eliminate_zeros()
-
-            X_out = X2
+                X_out.eliminate_zeros()
 
         else:
             X_arr = np.asarray(X, dtype=np.float32).copy()
@@ -340,7 +339,7 @@ class MSICube:
             if low_action == "move":
                 if low is None:
                     raise ValueError("low must be set when low_action='move'")
-                X_arr = X_arr - low
+                np.subtract(X_arr, low, out=X_arr)
                 X_arr[X_arr < 0] = 0.0
             elif low is not None and low_action != "keep":
                 if low_action == "nan":
