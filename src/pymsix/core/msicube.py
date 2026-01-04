@@ -329,6 +329,7 @@ class MSICube:
                 elif high_action == "clip":
                     data[mask] = high
 
+            X_out.data = data
             if low_action in {"zero", "move"}:
                 X_out.eliminate_zeros()
 
