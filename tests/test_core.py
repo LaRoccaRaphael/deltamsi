@@ -308,6 +308,29 @@ def test_clip_or_mask_intensities_dense(mock_imzml_data: str) -> None:
     assert cube.adata.uns["intensity_clipping"][0]["low_action"] == "zero"
 
 
+def test_clip_or_mask_intensities_move_low_action(mock_imzml_data: str) -> None:
+    """Move intensities by subtracting the low threshold and clamp negatives."""
+
+    cube = MSICube(data_directory=mock_imzml_data)
+    cube.adata = ad.AnnData(
+        X=np.array([[0.1, 1.2], [0.6, 0.8]], dtype=float),
+        obs=pd.DataFrame(index=["p1", "p2"]),
+        var=pd.DataFrame(index=["mz1", "mz2"]),
+    )
+
+    cube.clip_or_mask_intensities(
+        low=0.5, high=0.6, low_action="move", high_action="clip"
+    )
+
+    assert cube.adata is not None
+    np.testing.assert_allclose(
+        cube.adata.X,
+        np.array([[0.0, 0.6], [0.1, 0.3]], dtype=np.float32),
+        atol=1e-6,
+    )
+    assert cube.adata.uns["intensity_clipping"][0]["low_action"] == "move"
+
+
 def test_clip_or_mask_intensities_layer_copy(mock_imzml_data: str) -> None:
     """Operate on a specific layer and ensure copy keeps the original untouched."""
 
@@ -328,6 +351,34 @@ def test_clip_or_mask_intensities_layer_copy(mock_imzml_data: str) -> None:
     np.testing.assert_allclose(cube.adata.layers["raw"], np.array([[0.2, 5.0]]))
     assert "intensity_clipping" not in cube.adata.uns
     assert clipped.uns["intensity_clipping"][0]["layer"] == "raw"
+
+
+def test_clip_or_mask_intensities_new_layer(mock_imzml_data: str) -> None:
+    """Write processed intensities into a new layer without mutating the source."""
+
+    cube = MSICube(data_directory=mock_imzml_data)
+    cube.adata = ad.AnnData(
+        X=np.array([[0.1, 1.2], [0.6, 0.8]], dtype=float),
+        obs=pd.DataFrame(index=["p1", "p2"]),
+        var=pd.DataFrame(index=["mz1", "mz2"]),
+    )
+
+    cube.clip_or_mask_intensities(
+        low=0.5,
+        high=1.0,
+        low_action="zero",
+        high_action="clip",
+        result_layer="clipped",
+    )
+
+    assert cube.adata is not None
+    np.testing.assert_allclose(
+        cube.adata.layers["clipped"], np.array([[0.0, 1.0], [0.6, 0.8]])
+    )
+    np.testing.assert_allclose(
+        cube.adata.X, np.array([[0.1, 1.2], [0.6, 0.8]], dtype=float)
+    )
+    assert cube.adata.uns["intensity_clipping"][0]["result_layer"] == "clipped"
 
 
 def test_clip_or_mask_intensities_sparse(mock_imzml_data: str) -> None:
