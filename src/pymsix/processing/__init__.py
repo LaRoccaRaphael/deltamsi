@@ -6,6 +6,7 @@ from .preprocessing import (
     msi_median_filter_2d,
     msi_threshold_quantile,
 )
+from .discriminant_analysis import RankIonsMSIParams, rank_ions_groups_msi
 
 __all__ = [
     "MSIHotspotCapParams",
@@ -14,4 +15,6 @@ __all__ = [
     "msi_cap_hotspots",
     "msi_median_filter_2d",
     "msi_threshold_quantile",
+    "RankIonsMSIParams",
+    "rank_ions_groups_msi",
 ]
