@@ -2,8 +2,76 @@ import numpy as np
 import pandas as pd
 import anndata as ad
 import scipy.sparse as sp
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 from scipy.ndimage import label
+
+
+def spatial_chaos_fold_change(
+    chaos_scores: np.ndarray,
+    sample_groups: Sequence,
+    control_label: Any,
+    interaction_label: Any,
+    eps: float = 1e-6,
+) -> Dict[str, np.ndarray]:
+    """
+    Compute structure-based fold change FC_S(m) from spatial chaos scores.
+
+    Parameters
+    ----------
+    chaos_scores : ndarray, shape (n_mz, n_samples)
+        Spatial chaos scores for each ion (rows) and sample (columns).
+    sample_groups : sequence of length n_samples
+        Group label for each sample (e.g. "control", "interaction").
+    control_label : Any
+        Label in ``sample_groups`` corresponding to the control group.
+    interaction_label : Any
+        Label in ``sample_groups`` corresponding to the interaction/condition group.
+    eps : float, default 1e-6
+        Small constant added as a floor to ``S_control_max`` in the denominator to
+        avoid division by zero when control scores are ~0.
+
+    Returns
+    -------
+    result : dict
+        - "S_control_max": 1D ndarray, shape (n_mz,)
+              ``S_control_max(m) = max_{s in control} S_{control,s}(m)``
+        - "S_interaction_max": 1D ndarray, shape (n_mz,)
+              ``S_interaction_max(m) = max_{s in interaction} S_{interaction,s}(m)``
+        - "FC_S": 1D ndarray, shape (n_mz,)
+              ``FC_S(m) = S_interaction_max(m) / max(S_control_max(m), eps)``
+    """
+
+    chaos_scores = np.asarray(chaos_scores, dtype=float)
+    sample_groups = np.asarray(sample_groups)
+
+    if chaos_scores.ndim != 2:
+        raise ValueError("chaos_scores must be 2D with shape (n_mz, n_samples)")
+
+    n_mz, n_samples = chaos_scores.shape
+    if sample_groups.shape[0] != n_samples:
+        raise ValueError("sample_groups length must match chaos_scores.shape[1]")
+
+    ctrl_mask = sample_groups == control_label
+    inter_mask = sample_groups == interaction_label
+
+    if ctrl_mask.sum() == 0:
+        raise ValueError(f"No samples found with control_label={control_label!r}")
+    if inter_mask.sum() == 0:
+        raise ValueError(
+            f"No samples found with interaction_label={interaction_label!r}"
+        )
+
+    S_control_max = np.max(chaos_scores[:, ctrl_mask], axis=1)
+    S_interaction_max = np.max(chaos_scores[:, inter_mask], axis=1)
+
+    denom = np.maximum(S_control_max, eps)
+    FC_S = S_interaction_max / denom
+
+    return {
+        "S_control_max": S_control_max,
+        "S_interaction_max": S_interaction_max,
+        "FC_S": FC_S,
+    }
 
 
 def spatial_chaos_score(
@@ -164,3 +232,103 @@ def compute_spatial_chaos_matrix(
             )
 
     return chaos, samples
+
+
+def spatial_chaos_fold_change_from_adata(
+    adata: ad.AnnData,
+    *,
+    groupby: str,
+    control_label: Any,
+    interaction_label: Any,
+    varm_key: str = "spatial_chaos",
+    eps: float = 1e-6,
+) -> Dict[str, np.ndarray]:
+    """
+    Compute spatial chaos fold change using chaos scores stored in ``adata.varm``.
+
+    Parameters
+    ----------
+    adata : AnnData
+        Annotated data matrix containing spatial chaos scores in ``adata.varm``.
+    groupby : str
+        ``adata.obs`` column with MSI labels/conditions for each pixel. Values are
+        expected to be constant within a sample.
+    control_label : Any
+        Label corresponding to the control group.
+    interaction_label : Any
+        Label corresponding to the interaction/condition group.
+    varm_key : str, default "spatial_chaos"
+        Key in ``adata.varm`` holding the chaos score matrix produced by
+        :func:`compute_spatial_chaos_matrix` or
+        :meth:`pymsix.core.msicube.MSICube.compute_spatial_chaos_scores`.
+    eps : float, default 1e-6
+        Numerical floor applied to the control denominator.
+
+    Returns
+    -------
+    Dict[str, np.ndarray]
+        Dictionary with the same keys as :func:`spatial_chaos_fold_change`.
+    """
+
+    if varm_key not in adata.varm:
+        raise KeyError(
+            f"Spatial chaos scores not found in adata.varm['{varm_key}']."
+        )
+
+    chaos_scores = np.asarray(adata.varm[varm_key], dtype=float)
+    if chaos_scores.ndim != 2:
+        raise ValueError(
+            f"adata.varm['{varm_key}'] must be 2D with shape (n_vars, n_samples)"
+        )
+
+    spatial_meta = adata.uns.get("spatial_chaos", {})
+    sample_key = spatial_meta.get("sample_key", "sample")
+    samples = spatial_meta.get("samples")
+    if samples is None:
+        if sample_key not in adata.obs:
+            raise KeyError(
+                "Sample information missing. Provide 'samples' in adata.uns['spatial_chaos'] "
+                f"or a '{sample_key}' column in adata.obs."
+            )
+        samples = list(pd.unique(adata.obs[sample_key]))
+
+    if chaos_scores.shape[1] != len(samples):
+        raise ValueError(
+            "Number of columns in chaos scores does not match stored samples order."
+        )
+
+    if groupby not in adata.obs:
+        raise KeyError(f"Column '{groupby}' not found in AnnData.obs")
+    if sample_key not in adata.obs:
+        raise KeyError(f"Column '{sample_key}' not found in AnnData.obs")
+
+    sample_groups: List[Any] = []
+    for sample in samples:
+        mask = adata.obs[sample_key] == sample
+        if not np.any(mask):
+            raise ValueError(f"No observations found for sample '{sample}'")
+
+        labels = pd.unique(adata.obs.loc[mask, groupby].dropna())
+        if len(labels) == 0:
+            raise ValueError(
+                f"No non-NaN labels found in column '{groupby}' for sample '{sample}'"
+            )
+        if len(labels) > 1:
+            raise ValueError(
+                f"Multiple labels found for sample '{sample}' in column '{groupby}': {labels}"
+            )
+
+        sample_groups.append(labels[0])
+
+    fold_change = spatial_chaos_fold_change(
+        chaos_scores=chaos_scores,
+        sample_groups=sample_groups,
+        control_label=control_label,
+        interaction_label=interaction_label,
+        eps=eps,
+    )
+
+    fold_change["sample_groups"] = np.asarray(sample_groups)
+    fold_change["samples"] = np.asarray(samples)
+
+    return fold_change

@@ -23,7 +23,10 @@ from pymsix.processing.colocalization import (
     CosineColocParams,
     compute_mz_cosine_colocalization,
 )
-from pymsix.processing.spatial_chaos import compute_spatial_chaos_matrix
+from pymsix.processing.spatial_chaos import (
+    compute_spatial_chaos_matrix,
+    spatial_chaos_fold_change_from_adata,
+)
 
 from pymsix.processing.recalibration_core import (
     load_database_masses,
@@ -1221,6 +1224,53 @@ class MSICube:
         )
 
         return chaos
+
+    def compute_spatial_chaos_fold_change(
+        self,
+        *,
+        groupby: str,
+        control_label: Any,
+        interaction_label: Any,
+        varm_key: str = "spatial_chaos",
+        result_key: str = "spatial_chaos_fold_change",
+        eps: float = 1e-6,
+    ) -> Dict[str, np.ndarray]:
+        """
+        Compute fold change of spatial chaos scores between two MSI groups.
+
+        The fold change is derived from chaos scores stored in ``adata.varm`` and
+        sample metadata in ``adata.obs``.
+        """
+
+        if self.adata is None:
+            raise ValueError("AnnData is empty. Run data extraction first.")
+
+        fold_change = spatial_chaos_fold_change_from_adata(
+            self.adata,
+            groupby=groupby,
+            control_label=control_label,
+            interaction_label=interaction_label,
+            varm_key=varm_key,
+            eps=eps,
+        )
+
+        self.adata.var[f"{result_key}_control_max"] = fold_change["S_control_max"]
+        self.adata.var[f"{result_key}_interaction_max"] = fold_change[
+            "S_interaction_max"
+        ]
+        self.adata.var[f"{result_key}_FC_S"] = fold_change["FC_S"]
+
+        self.adata.uns[result_key] = {
+            "groupby": groupby,
+            "control_label": control_label,
+            "interaction_label": interaction_label,
+            "varm_key": varm_key,
+            "eps": float(eps),
+            "samples": fold_change["samples"].tolist(),
+            "sample_groups": fold_change["sample_groups"].tolist(),
+        }
+
+        return fold_change
 
     def plot_mean_spectrum_windows(
         self,
