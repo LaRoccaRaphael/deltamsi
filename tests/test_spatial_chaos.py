@@ -5,6 +5,7 @@ import anndata as ad
 from pymsix.core.msicube import MSICube
 from pymsix.processing.spatial_chaos import (
     compute_spatial_chaos_matrix,
+    spatial_chaos_fold_change_from_adata,
     spatial_chaos_score,
 )
 
@@ -71,3 +72,48 @@ def test_msicube_stores_spatial_chaos(tmp_path) -> None:
     assert np.allclose(chaos, cube.adata.varm["chaos"], equal_nan=True)
     assert cube.adata.uns["spatial_chaos"]["samples"] == ["s1", "s2"]
     assert cube.adata.uns["spatial_chaos"]["varm_key"] == "chaos"
+
+
+def test_spatial_chaos_fold_change_from_adata() -> None:
+    adata = _build_test_adata()
+    adata.obs["condition"] = ["ctrl", "ctrl", "ctrl", "ctrl", "treated", "treated"]
+
+    chaos, samples = compute_spatial_chaos_matrix(adata, n_thresholds=5)
+    adata.varm["chaos"] = chaos
+    adata.uns["spatial_chaos"] = {"samples": samples, "sample_key": "sample"}
+
+    fold_change = spatial_chaos_fold_change_from_adata(
+        adata,
+        groupby="condition",
+        control_label="ctrl",
+        interaction_label="treated",
+        varm_key="chaos",
+        eps=1e-6,
+    )
+
+    assert np.allclose(fold_change["S_control_max"], [0.75, 0.0], equal_nan=True)
+    assert np.allclose(fold_change["S_interaction_max"], [0.0, 0.0], equal_nan=True)
+    assert np.allclose(fold_change["FC_S"], [0.0, 0.0])
+    assert fold_change["samples"].tolist() == ["s1", "s2"]
+    assert fold_change["sample_groups"].tolist() == ["ctrl", "treated"]
+
+
+def test_msicube_spatial_chaos_fold_change(tmp_path) -> None:
+    adata = _build_test_adata()
+    adata.obs["condition"] = ["ctrl", "ctrl", "ctrl", "ctrl", "treated", "treated"]
+
+    cube = MSICube(data_directory=str(tmp_path))
+    cube.adata = adata
+
+    cube.compute_spatial_chaos_scores(n_thresholds=5, varm_key="chaos")
+    fc = cube.compute_spatial_chaos_fold_change(
+        groupby="condition",
+        control_label="ctrl",
+        interaction_label="treated",
+        varm_key="chaos",
+        result_key="chaos_fc",
+    )
+
+    assert np.allclose(fc["FC_S"], [0.0, 0.0])
+    assert "chaos_fc_FC_S" in cube.adata.var
+    assert cube.adata.uns["chaos_fc"]["sample_groups"] == ["ctrl", "treated"]
