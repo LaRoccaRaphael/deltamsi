@@ -25,8 +25,6 @@ class CosineColocParams:
     symmetrize: bool = True
     include_self: bool = False
     store_varp_key: Optional[str] = "ion_cosine"
-    store_keep_mask_key: Optional[str] = "keep_coloc"
-    keep_rule: Literal["any_edge", "max_sim"] = "any_edge"
 
 
 def _get_X(msicube: "MSICube", layer: Optional[str]) -> Union[np.ndarray, sp.spmatrix]:
@@ -157,7 +155,7 @@ def compute_mz_cosine_colocalization(
     msicube: "MSICube",
     *,
     params: CosineColocParams = CosineColocParams(),
-) -> Tuple[Union[np.ndarray, sp.csr_matrix], Optional[np.ndarray]]:
+) -> Union[np.ndarray, sp.csr_matrix]:
     """Compute cosine similarity between ion images stored on an :class:`MSICube`.
 
     Parameters
@@ -172,8 +170,6 @@ def compute_mz_cosine_colocalization(
     -------
     S : ndarray | scipy.sparse.csr_matrix
         Cosine similarity matrix between variables (ions).
-    keep_mask : ndarray | None
-        Boolean mask of variables to keep when ``store_keep_mask_key`` is set.
     """
 
     X = _get_X(msicube, params.layer)
@@ -199,22 +195,7 @@ def compute_mz_cosine_colocalization(
             include_self=params.include_self,
         )
 
-    keep_mask = None
     adata = msicube.adata
-    if params.store_keep_mask_key is not None and adata is not None:
-        if sp.issparse(S):
-            if params.keep_rule == "any_edge":
-                keep_mask = (np.asarray((S > 0).sum(axis=1)).ravel() > 0)
-            else:
-                keep_mask = (S.max(axis=1).toarray().ravel() >= float(params.min_sim))
-        else:
-            if params.keep_rule == "any_edge":
-                keep_mask = (np.sum(S > 0, axis=1) > 0)
-            else:
-                keep_mask = (np.max(S, axis=1) >= float(params.min_sim))
-
-        adata.var[params.store_keep_mask_key] = keep_mask
-
     if params.store_varp_key is not None and adata is not None:
         if sp.issparse(S):
             adata.varp[params.store_varp_key] = S
@@ -229,10 +210,8 @@ def compute_mz_cosine_colocalization(
             "chunk_size": params.chunk_size,
             "symmetrize": params.symmetrize,
             "include_self": params.include_self,
-            "keep_mask_key": params.store_keep_mask_key,
-            "keep_rule": params.keep_rule,
             "dtype": str(dtype),
         }
 
-    return S, keep_mask
+    return S
 

@@ -410,8 +410,8 @@ def cluster_masses_from_colocalization(
         Square matrix of cosine similarities between ions. Only the upper
         triangle is used.
     keep_mask : np.ndarray | None
-        Optional boolean mask of ions to include in the clustering. When
-        provided, labels for excluded ions are set to ``-1``.
+        Optional NxN binary matrix; if provided, edges are only added where
+        ``keep_mask[i, j]`` is ``True`` for ``i < j``. The diagonal is ignored.
     resolution : float
         Leiden resolution_parameter.
     edge_max_delta_cosine : float | None
@@ -429,8 +429,7 @@ def cluster_masses_from_colocalization(
     -------
     result : dict
         {
-          "labels": np.ndarray of shape (n,), with singleton clusters set to -1
-                       and excluded nodes (from ``keep_mask``) also set to -1,
+          "labels": np.ndarray of shape (n,), with singleton clusters set to -1,
           "n_clusters": int (includes -1 as one cluster),
           "n_minus1": int (count of nodes labeled -1),
           "compression": float (n_clusters / n_samples),
@@ -449,55 +448,37 @@ def cluster_masses_from_colocalization(
     if coloc_matrix.shape[0] != coloc_matrix.shape[1]:
         raise ValueError("coloc_matrix must be square.")
 
-    n_total = coloc_matrix.shape[0]
-    labels_full = np.full(n_total, -1, dtype=int)
+    n = coloc_matrix.shape[0]
+    labels = np.full(n, -1, dtype=int)
 
-    if keep_mask is None:
-        keep_mask = np.ones(n_total, dtype=bool)
-    else:
-        keep_mask = np.asarray(keep_mask, dtype=bool)
-        if keep_mask.shape[0] != n_total:
-            raise ValueError(
-                f"keep_mask must have length {n_total}, got {keep_mask.shape[0]}"
-            )
-
-    active_idx = np.flatnonzero(keep_mask)
-    n_active = active_idx.size
-
-    if n_active == 0:
-        uniq = np.unique(labels_full)
-        return {
-            "labels": labels_full,
-            "n_clusters": int(uniq.size),
-            "n_minus1": int((labels_full == -1).sum()),
-            "compression": float(uniq.size) / float(n_total),
-            "edges": pd.DataFrame(columns=["i", "j", "cosine", "weight"]),
-            **({"graph": None} if return_graph else {}),
-        }
-
-    if sp.issparse(coloc_matrix):
-        S_active = coloc_matrix.tocsr()[active_idx][:, active_idx]
-    else:
-        S_active = np.asarray(coloc_matrix)[np.ix_(active_idx, active_idx)]
+    if keep_mask is not None:
+        keep_mask = np.asarray(keep_mask)
+        if keep_mask.shape != (n, n):
+            raise ValueError(f"keep_mask must be shape {(n, n)}, got {keep_mask.shape}")
+        keep_mask = np.triu(keep_mask, k=1).astype(bool)
 
     # Build edges from the upper triangle
     rows = []
     threshold = edge_max_delta_cosine
 
-    if sp.issparse(S_active):
-        coo = S_active.tocoo()
+    if sp.issparse(coloc_matrix):
+        coo = coloc_matrix.tocoo()
         for i, j, val in zip(coo.row, coo.col, coo.data):
             if i >= j:
+                continue
+            if keep_mask is not None and not keep_mask[i, j]:
                 continue
             if threshold is not None and float(val) < float(threshold):
                 continue
             rows.append({"i": int(i), "j": int(j), "cosine": float(val), "weight": float(val)})
     else:
-        tri = np.triu_indices(n_active, k=1)
-        vals = S_active[tri]
+        tri = np.triu_indices(n, k=1)
+        vals = np.asarray(coloc_matrix)[tri]
         mask = np.ones(vals.shape, dtype=bool)
         if threshold is not None:
             mask &= vals >= float(threshold)
+        if keep_mask is not None:
+            mask &= keep_mask[tri]
         if mask.any():
             i_sel = tri[0][mask]
             j_sel = tri[1][mask]
@@ -510,20 +491,19 @@ def cluster_masses_from_colocalization(
     edges_df_local = pd.DataFrame(rows)
 
     if edges_df_local.empty:
-        labels_full[active_idx] = -1
-        uniq = np.unique(labels_full)
+        uniq = np.unique(labels)
         return {
-            "labels": labels_full,
+            "labels": labels,
             "n_clusters": int(uniq.size),
-            "n_minus1": int((labels_full == -1).sum()),
-            "compression": float(uniq.size) / float(n_total),
+            "n_minus1": int((labels == -1).sum()),
+            "compression": float(uniq.size) / float(n),
             "edges": pd.DataFrame(columns=["i", "j", "cosine", "weight"]),
             **({"graph": None} if return_graph else {}),
         }
 
     if knn_k is not None and knn_k > 0:
         edges_df_local = _prune_edges_knn_df(
-            n_nodes=n_active,
+            n_nodes=n,
             edges_df=edges_df_local,
             k=int(knn_k),
             mode=str(knn_mode).lower(),
@@ -533,13 +513,12 @@ def cluster_masses_from_colocalization(
             dm_col="dm",
         )
         if edges_df_local.empty:
-            labels_full[active_idx] = -1
-            uniq = np.unique(labels_full)
+            uniq = np.unique(labels)
             return {
-                "labels": labels_full,
+                "labels": labels,
                 "n_clusters": int(uniq.size),
-                "n_minus1": int((labels_full == -1).sum()),
-                "compression": float(uniq.size) / float(n_total),
+                "n_minus1": int((labels == -1).sum()),
+                "compression": float(uniq.size) / float(n),
                 "edges": pd.DataFrame(columns=["i", "j", "cosine", "weight"]),
                 **({"graph": None} if return_graph else {}),
             }
@@ -554,7 +533,9 @@ def cluster_masses_from_colocalization(
             "libraries) are available on your platform."
         ) from e
 
-    g = ig.Graph(n=n_active, edges=list(zip(edges_df_local["i"].tolist(), edges_df_local["j"].tolist())))
+    g = ig.Graph(
+        n=n, edges=list(zip(edges_df_local["i"].tolist(), edges_df_local["j"].tolist()))
+    )
     g.es["weight"] = edges_df_local["weight"].astype(float).tolist()
 
     part = la.find_partition(
@@ -563,21 +544,17 @@ def cluster_masses_from_colocalization(
         weights="weight",
         resolution_parameter=float(resolution),
     )
-    labels_active = np.array(part.membership, dtype=int)
-    labels_active = _singletons_to_minus1(labels_active)
+    labels = np.array(part.membership, dtype=int)
+    labels = _singletons_to_minus1(labels)
 
-    labels_full[active_idx] = labels_active
-    n_clusters = int(np.unique(labels_full).size)
-    n_minus1 = int((labels_full == -1).sum())
-    compression = float(n_clusters) / float(n_total)
+    n_clusters = int(np.unique(labels).size)
+    n_minus1 = int((labels == -1).sum())
+    compression = float(n_clusters) / float(n)
 
-    edges_df = edges_df_local.copy()
-    edges_df["i"] = active_idx[edges_df_local["i"].to_numpy(int)]
-    edges_df["j"] = active_idx[edges_df_local["j"].to_numpy(int)]
-    edges_df = edges_df[["i", "j", "cosine", "weight"]]
+    edges_df = edges_df_local[["i", "j", "cosine", "weight"]].copy()
 
     result = {
-        "labels": labels_full,
+        "labels": labels,
         "n_clusters": n_clusters,
         "n_minus1": n_minus1,
         "compression": compression,

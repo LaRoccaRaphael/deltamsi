@@ -29,17 +29,15 @@ def test_cosine_dense_storage(mock_imzml_data: str) -> None:
         var=pd.DataFrame(index=["mz1", "mz2"]),
     )
 
-    S, keep_mask = cube.compute_cosine_colocalization(
+    S = cube.compute_cosine_colocalization(
         params=CosineColocParams(mode="dense", include_self=False)
     )
 
     expected = np.array([[0.0, 0.70710677], [0.70710677, 0.0]], dtype=np.float32)
     np.testing.assert_allclose(S, expected)
     assert cube.adata is not None
-    np.testing.assert_array_equal(cube.adata.var["keep_coloc"].to_numpy(), [True, True])
     assert "ion_cosine" in cube.adata.varp
     assert "ion_cosine_params" in cube.adata.uns
-    assert keep_mask is not None
 
 
 def test_cosine_topk_sparse(mock_imzml_data: str) -> None:
@@ -55,16 +53,11 @@ def test_cosine_topk_sparse(mock_imzml_data: str) -> None:
         topk=1,
         min_sim=0.1,
         symmetrize=True,
-        keep_rule="max_sim",
         store_varp_key="cosine_topk",
-        store_keep_mask_key="keep_topk",
     )
-    S, keep_mask = compute_mz_cosine_colocalization(cube, params=params)
+    S = compute_mz_cosine_colocalization(cube, params=params)
 
     assert cube.adata is not None
     assert S.shape == (3, 3)
     assert S.nnz > 0
     assert cube.adata.varp["cosine_topk"].shape == (3, 3)
-    np.testing.assert_array_equal(cube.adata.var["keep_topk"].to_numpy(), keep_mask)
-    assert keep_mask is not None
-    assert keep_mask.tolist() == [False, True, True]

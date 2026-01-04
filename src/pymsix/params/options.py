@@ -235,11 +235,15 @@ class RecalibrationOptions:
 @dataclass(frozen=True)
 class MassClusteringOptions:
     """
-    Options for clustering m/z values based on chemical candidates.
-    Matches the parameters of cluster_masses_with_candidates.
+    Options for clustering m/z values.
+
+    The ``method`` parameter selects between candidate-based clustering
+    (``"candidates"``) and colocalization-based clustering (``"colocalization"``).
     """
 
-    # Matching params
+    method: Literal["candidates", "colocalization"] = "candidates"
+
+    # Matching params (candidates mode)
     tol_da: float = 0.005
     tol_ppm: Optional[float] = None
     edge_max_delta_m: Optional[float] = None
@@ -258,10 +262,16 @@ class MassClusteringOptions:
     knn_k: Optional[int] = None
     knn_mode: str = "union"
 
+    # Colocalization mode options
+    coloc_varp_key: Optional[str] = "ion_cosine"
+    edge_max_delta_cosine: Optional[float] = None
+
     # Output options
     return_graph: bool = False
 
     def validate(self) -> None:
+        if self.method not in {"candidates", "colocalization"}:
+            raise ValueError("method must be 'candidates' or 'colocalization'.")
         if self.tol_da <= 0:
             raise ValueError("tol_da must be positive.")
         if self.tol_ppm is not None and self.tol_ppm <= 0:
@@ -272,6 +282,8 @@ class MassClusteringOptions:
             raise ValueError("knn_k cannot be negative.")
         if self.knn_mode not in ["union", "mutual"]:
             raise ValueError("knn_mode must be 'union' or 'mutual'.")
+        if self.method == "colocalization" and self.coloc_varp_key is None:
+            raise ValueError("coloc_varp_key must be provided for colocalization mode.")
 
     def get_tol_param(self) -> Union[float, Tuple[str, float]]:
         """Returns the format expected by the 'tol' argument."""

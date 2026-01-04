@@ -453,14 +453,13 @@ class MSICube:
 
     def compute_cosine_colocalization(
         self, *, params: CosineColocParams = CosineColocParams()
-    ) -> Tuple[Union[np.ndarray, sp.csr_matrix], Optional[np.ndarray]]:
+    ) -> Union[np.ndarray, sp.csr_matrix]:
         """Compute cosine similarity between ion images stored on this cube.
 
         This is a convenience wrapper around
         :func:`pymsix.processing.colocalization.compute_mz_cosine_colocalization`.
         The resulting similarity matrix is stored in ``adata.varp`` when
-        ``params.store_varp_key`` is provided, and optional keep masks are stored in
-        ``adata.var``.
+        ``params.store_varp_key`` is provided.
         """
 
         if self.adata is None:
@@ -1485,17 +1484,19 @@ class MSICube:
 
     def cluster_masses(
         self,
-        candidates_df: pd.DataFrame,
+        candidates_df: Optional[pd.DataFrame] = None,
         options: Optional[MassClusteringOptions] = None,
         keep_mask: Optional[np.ndarray] = None,
     ) -> None:
         """
-        Regroupe les pics (mz) stockés dans adata.var en clusters de familles chimiques.
+        Regroupe les pics (mz) stockés dans adata.var en clusters de familles chimiques
+        à partir d'un catalogue de candidats ou d'une matrice de colocalisation.
 
         Args:
             candidates_df: DataFrame contenant les deltas de masse (ex: delta_da, score, label).
+                Obligatoire uniquement pour ``method='candidates'``.
             options: Instance de MassClusteringOptions pour configurer le graphe et Leiden.
-            keep_mask: Matrice optionnelle pour filtrer les arêtes autorisées.
+            keep_mask: Matrice optionnelle (NxN) pour filtrer les arêtes autorisées.
         """
         if self.adata is None:
             raise ValueError(
@@ -1516,26 +1517,48 @@ class MSICube:
         masses = self.adata.var["mz"].values
 
         logger.info(
-            f"Démarrage du clustering sur {len(masses)} masses (Resolution: {opts.resolution})..."
+            f"Démarrage du clustering sur {len(masses)} masses (Resolution: {opts.resolution}, Method: {opts.method})..."
         )
 
         # 3. Appel de la fonction de traitement
-        res = cluster_masses_with_candidates(
-            masses=masses,
-            candidates_df=candidates_df,
-            delta_col=opts.delta_col,
-            score_col=opts.score_col,
-            label_col=opts.label_col,
-            tol=opts.get_tol_param(),
-            edge_max_delta_m=opts.edge_max_delta_m,
-            keep_mask=keep_mask,
-            resolution=opts.resolution,
-            weight_transform=opts.weight_transform,
-            weight_kwargs=opts.weight_kwargs,
-            knn_k=opts.knn_k,
-            knn_mode=opts.knn_mode,
-            return_graph=opts.return_graph,
-        )
+        if opts.method == "colocalization":
+            if opts.coloc_varp_key is None:
+                raise ValueError("coloc_varp_key must be set for colocalization clustering.")
+            if opts.coloc_varp_key not in self.adata.varp:
+                raise KeyError(
+                    f"'{opts.coloc_varp_key}' is absent from adata.varp. "
+                    "Run compute_cosine_colocalization or adjust coloc_varp_key."
+                )
+
+            coloc_matrix = self.adata.varp[opts.coloc_varp_key]
+            res = cluster_masses_from_colocalization(
+                coloc_matrix=coloc_matrix,
+                keep_mask=keep_mask,
+                resolution=opts.resolution,
+                edge_max_delta_cosine=opts.edge_max_delta_cosine,
+                knn_k=opts.knn_k,
+                knn_mode=opts.knn_mode,
+                return_graph=opts.return_graph,
+            )
+        else:
+            if candidates_df is None:
+                raise ValueError("candidates_df is required when method='candidates'.")
+            res = cluster_masses_with_candidates(
+                masses=masses,
+                candidates_df=candidates_df,
+                delta_col=opts.delta_col,
+                score_col=opts.score_col,
+                label_col=opts.label_col,
+                tol=opts.get_tol_param(),
+                edge_max_delta_m=opts.edge_max_delta_m,
+                keep_mask=keep_mask,
+                resolution=opts.resolution,
+                weight_transform=opts.weight_transform,
+                weight_kwargs=opts.weight_kwargs,
+                knn_k=opts.knn_k,
+                knn_mode=opts.knn_mode,
+                return_graph=opts.return_graph,
+            )
 
         # 4. Stockage des résultats
         # Les labels de clusters (ex: 0, 1, 2... et -1 pour les bruits) vont dans var
