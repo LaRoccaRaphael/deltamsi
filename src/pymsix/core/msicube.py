@@ -244,6 +244,7 @@ class MSICube:
         low_action: LowAction = "nan",
         high_action: HighAction = "clip",
         layer: Optional[str] = None,
+        result_layer: Optional[str] = None,
         copy: bool = False,
     ) -> Optional[ad.AnnData]:
         """
@@ -266,6 +267,10 @@ class MSICube:
             - "clip": set values > high to ``high``
         layer
             If ``None`` operate on ``adata.X`` else on ``adata.layers[layer]``.
+        result_layer
+            Store the processed matrix into this ``adata.layers`` entry instead of
+            overwriting the source. If ``None``, the source ``X``/``layer`` is
+            modified directly.
         copy
             If ``True``, operate on a copy of :attr:`adata` and return it. Otherwise
             modify the existing object in-place and return ``None``.
@@ -303,7 +308,12 @@ class MSICube:
             X2 = X.astype(np.float32, copy=True)
             data = X2.data
 
-            if low is not None and low_action != "keep":
+            if low_action == "move":
+                if low is None:
+                    raise ValueError("low must be set when low_action='move'")
+                data -= low
+                data[data < 0] = 0.0
+            elif low is not None and low_action != "keep":
                 mask = data < low
                 if low_action == "nan":
                     data[mask] = np.nan
@@ -319,7 +329,7 @@ class MSICube:
                 elif high_action == "clip":
                     data[mask] = high
 
-            if low_action == "zero":
+            if low_action in {"zero", "move"}:
                 X2.eliminate_zeros()
 
             X_out = X2
@@ -327,7 +337,12 @@ class MSICube:
         else:
             X_arr = np.asarray(X, dtype=np.float32).copy()
 
-            if low is not None and low_action != "keep":
+            if low_action == "move":
+                if low is None:
+                    raise ValueError("low must be set when low_action='move'")
+                X_arr = X_arr - low
+                X_arr[X_arr < 0] = 0.0
+            elif low is not None and low_action != "keep":
                 if low_action == "nan":
                     X_arr[X_arr < low] = np.nan
                 elif low_action == "zero":
@@ -343,15 +358,18 @@ class MSICube:
 
             X_out = X_arr
 
-        if layer is None:
+        if result_layer is None and layer is None:
             obj.X = X_out
-        else:
+        elif result_layer is None and layer is not None:
             obj.layers[layer] = X_out
+        else:
+            obj.layers[result_layer] = X_out
 
         obj.uns.setdefault("intensity_clipping", [])
         obj.uns["intensity_clipping"].append(
             {
                 "layer": layer,
+                "result_layer": result_layer,
                 "low": None if low is None else float(low),
                 "high": None if high is None else float(high),
                 "low_action": low_action,
