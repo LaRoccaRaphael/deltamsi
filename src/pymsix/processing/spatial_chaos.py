@@ -79,29 +79,50 @@ def spatial_chaos_score(
     n_thresholds: int = 30,
 ) -> float:
     """
-    Spatial chaos score S as defined in Section 2.3.1 of Chapter 2:
-      1) Normalize ion image to [0, 1] by its max intensity.
-      2) Define N thresholds t_k evenly spaced in (0, 1).
-      3) For each threshold:
-           B_k(x,y) = 1 if I_norm(x,y) >= t_k else 0
-         - C_k = number of clusters (4-connectivity) in B_k
-         - P_k = number of positive pixels in B_k
-      4) C_tot = sum_k C_k, P_tot = sum_k P_k
-      5) S = 1 - C_tot / P_tot   (0 <= S <= 1)
+    Spatial chaos score :math:`S` as defined in Section 2.3.1 of Chapter 2.
+
+    The score is computed as follows:
+
+    #. Normalize the ion image to the interval ``[0, 1]`` using its maximum intensity.
+    #. Define :math:`N` thresholds :math:`t_k` evenly spaced in the interval ``(0, 1)``.
+    #. For each threshold:
+
+    * Compute the binary image :math:`B_k(x, y)` defined as:
+
+        .. math::
+
+            B_k(x, y) =
+            \\begin{cases}
+            1 & \\text{if } I_{norm}(x, y) \\ge t_k \\\\
+            0 & \\text{otherwise}
+            \\end{cases}
+
+    * Let :math:`C_k` be the number of clusters
+        (4-connectivity) in :math:`B_k`.
+    * Let :math:`P_k` be the number of positive pixels in :math:`B_k`.
+
+    #. Compute :math:`C_{tot} = \\sum_k C_k` and :math:`P_{tot} = \\sum_k P_k`.
+    #. Compute the final score:
+
+    .. math::
+
+        S = 1 - \\frac{C_{tot}}{P_{tot}}, \\qquad 0 \\le S \\le 1
 
     Parameters
     ----------
     image : 2D ndarray
         Ion image with non-negative intensities.
+
     n_thresholds : int, default 30
-        Number of thresholds N.
+        Number of thresholds :math:`N`.
 
     Returns
     -------
     S : float
-        Spatial chaos score in [0, 1]. Higher S = more spatial structure.
-        Returns np.nan if image has no positive intensities.
+        Spatial chaos score in the interval ``[0, 1]``.
+        Returns ``numpy.nan`` if the image contains no positive intensities.
     """
+
     im = np.asarray(image, dtype=float)
 
     if im.ndim != 2:

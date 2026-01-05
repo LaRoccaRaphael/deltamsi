@@ -65,10 +65,10 @@ def _prune_edges_knn_df(
     k-NN pruning for an undirected edge list in a DataFrame.
 
     Keeps only edges that are among the top-k neighbors of a node, ranked by:
-      1) larger weight first,
-      2) smaller mass error (err),
-      3) smaller candidate score,
-      4) smaller |Δm| (dm).
+    1) larger weight first,
+    2) smaller mass error (err),
+    3) smaller candidate score.
+    4) smaller :math:`\Delta m` (dm).
 
     mode="union": keep edge if it's in top-k of either endpoint.
     mode="mutual": keep edge only if it's in top-k of both endpoints.
@@ -125,7 +125,7 @@ def cluster_masses_with_candidates(
     masses: Union[np.ndarray, list[float]],
     candidates_df: pd.DataFrame,
     *,
-    delta_col: str = "delta_da",  # candidate Δm in Da
+    delta_col: str = "delta_da",  # candidate :math:`\Delta m` in Da
     score_col: str = "score",  # smaller is better
     label_col: Optional[str] = "label",  # optional (e.g., CHON delta string)
     tol: Union[float, Tuple[str, float]] = ("da", 0.005),  # absolute or ppm tolerance
@@ -139,57 +139,95 @@ def cluster_masses_with_candidates(
     knn_mode: str = "union",  # "union" or "mutual"
 ) -> dict[str, object]:
     """
-    Build a graph on experimental masses using an external catalog of mass differences and cluster with Leiden.
+    Build a graph on experimental masses using an external catalog of mass differences
+    and cluster it using the Leiden algorithm.
 
     Parameters
     ----------
     masses : array-like of shape (n,)
-        Experimental m/z (treated as masses).
-    candidates_df : pd.DataFrame
-        Must contain at least [delta_col, score_col], and optionally label_col.
-        - Each row is a candidate Δm (in Da) with a 'score' where smaller is better.
-        - If multiple candidates match a pair within tolerance, pick the one with lowest score,
-          and break remaining ties by smallest mass error |Δm_exp - Δm_candidate|.
+        Experimental m/z values (treated as masses).
+
+    candidates_df : pandas.DataFrame
+        Table of candidate mass differences.
+        Must contain at least ``delta_col`` and ``score_col`` columns.
+        Each row represents a candidate mass difference :math:`\\Delta m` (in Da)
+        with an associated score where smaller values are better.
+
     delta_col : str
-        Column name for candidate Δm in Da.
+        Column name containing the candidate mass difference :math:`\\Delta m` in Dalton.
+
     score_col : str
-        Column name for the candidate score (positive, smaller is better).
+        Column name containing the candidate score (positive, smaller is better).
+
     label_col : str or None
-        Optional column name for a candidate label (e.g., atomic composition).
+        Optional column name containing a candidate label
+        (e.g. atomic composition or CHON delta string).
+
     tol : float or ('da', value) or ('ppm', value)
-        Matching tolerance. For ppm, tolerance is applied around each candidate Δm (exactly).
+        Matching tolerance.
+        If given in ppm, the tolerance is applied around each candidate
+        mass difference :math:`\\Delta m`.
+
     edge_max_delta_m : float or None
-        If set, edges are only considered when |m_i - m_j| <= edge_max_delta_m.
-    keep_mask : np.ndarray or None
-        Optional NxN binary matrix; if provided, edges are only added where keep_mask[i,j] == 1.
-        The function only reads the upper triangle (i<j). Diagonal is ignored.
+        If provided, edges are only considered when
+        :math:`|m_i - m_j| \\leq` ``edge_max_delta_m``.
+
+    keep_mask : numpy.ndarray or None
+        Optional NxN binary matrix.
+        If provided, edges are only added where ``keep_mask[i, j] == 1``.
+        Only the upper triangle (``i < j``) is read; the diagonal is ignored.
+
     resolution : float
-        Leiden resolution_parameter.
-    weight_transform : {"inv1p","exp","one"} or callable(score)->weight
-        How to convert candidate score (smaller is better) into a graph weight (bigger is better).
-    weight_kwargs : dict
-        Extra kwargs for the weight transform (e.g., {"alpha": 0.5} for 'exp').
+        Leiden resolution parameter.
+
+    weight_transform : {"inv1p", "exp", "one"} or callable
+        Transformation applied to the candidate score to obtain a graph weight
+        (larger weights indicate stronger connections).
+
+    weight_kwargs : dict or None
+        Optional keyword arguments passed to the weight transform.
+
     return_graph : bool
-        If True, also return the igraph Graph object.
+        If True, also return the underlying ``igraph.Graph`` object.
 
     Returns
     -------
     result : dict
-        {
-          "labels": np.ndarray of shape (n,), with singleton clusters set to -1,
-          "n_clusters": int (includes -1 as one cluster),
-          "n_minus1": int (count of nodes labeled -1),
-          "compression": float (n_clusters / n_samples),
-          "edges": pd.DataFrame with columns:
-              ["i","j","mz_i","mz_j","dm","cand_delta","cand_score","cand_label","weight","err","tol_da_used"],
-          "graph": igraph.Graph (only if return_graph=True)
-        }
+        Dictionary containing clustering results with the following keys:
+
+        ``labels``
+            ``numpy.ndarray`` of shape ``(n,)`` containing cluster labels.
+            Singleton clusters are labeled ``-1``.
+
+        ``n_clusters``
+            Total number of clusters (including ``-1``).
+
+        ``n_minus1``
+            Number of nodes labeled ``-1``.
+
+        ``compression``
+            Ratio ``n_clusters / n_samples``.
+
+        ``edges``
+            ``pandas.DataFrame`` describing graph edges with columns
+            ``["i", "j", "mz_i", "mz_j", "dm", "cand_delta", "cand_score",
+            "cand_label", "weight", "err", "tol_da_used"]``.
+
+        ``graph``
+            ``igraph.Graph`` object (only present if ``return_graph=True``).
 
     Notes
     -----
-    - Uses python-igraph + leidenalg (installed with pymsix). Ensure system
-      requirements for igraph are available on your platform.
-    - Tolerance for ppm is computed per candidate (exact), with a prefilter window around dm using ppm at dm for speed.
+    The matching procedure selects, for each mass pair, the candidate with the
+    lowest score among those within tolerance. Remaining ties are broken by the
+    smallest absolute mass error:
+
+    .. math::
+
+        |\\Delta m_{exp} - \\Delta m_{candidate}|
+
+    The implementation relies on ``python-igraph`` and ``leidenalg``.
+    Ensure that system-level dependencies for igraph are correctly installed.
     """
     weight_kwargs = weight_kwargs or {}
 
@@ -428,14 +466,25 @@ def cluster_masses_from_colocalization(
     Returns
     -------
     result : dict
-        {
-          "labels": np.ndarray of shape (n,), with singleton clusters set to -1,
-          "n_clusters": int (includes -1 as one cluster),
-          "n_minus1": int (count of nodes labeled -1),
-          "compression": float (n_clusters / n_samples),
-          "edges": pd.DataFrame with columns ["i", "j", "cosine", "weight"],
-          "graph": igraph.Graph (only if return_graph=True)
-        }
+        Dictionary containing the clustering results with the following keys:
+
+        ``labels``
+            ``numpy.ndarray`` of shape ``(n,)`` with singleton clusters labeled ``-1``.
+
+        ``n_clusters``
+            Total number of clusters (including ``-1``).
+
+        ``n_minus1``
+            Number of nodes labeled ``-1``.
+
+        ``compression``
+            Ratio ``n_clusters / n_samples``.
+
+        ``edges``
+            ``pandas.DataFrame`` with columns ``["i", "j", "cosine", "weight"]``.
+
+        ``graph``
+            ``igraph.Graph`` object (only if ``return_graph=True``).
     """
 
     if resolution <= 0:

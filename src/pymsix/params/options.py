@@ -55,6 +55,7 @@ class MeanSpectrumOptions:
         mass_accuracy_ppm: Instrument accuracy in ppm (1σ). If provided, this overrides tolerance_da.
         n_sigma: Radius of the Gaussian window in σ units (e.g., 3.0 for ±3σ window).
     """
+    __module__ = "pymsix.params"
 
     mode: Literal["profile", "centroid"]
     min_mz: float = 0.0
@@ -107,6 +108,7 @@ class GlobalMeanSpectrumOptions:
         tic_normalize: If True, each mean spectrum is TIC-normalized before averaging.
         compress_axis: If True, drop bins where the final mean intensity is zero.
     """
+    __module__ = "pymsix.params"
 
     binning_p: float = 0.0001
     use_intersection: bool = True
@@ -121,6 +123,7 @@ class GlobalMeanSpectrumOptions:
 @dataclass(frozen=True)
 class PeakPickingOptions:
     """Options for peak picking on a spectrum."""
+    __module__ = "pymsix.params"
 
     topn: int = 10000
     binning_p: float = 1e-4
@@ -160,6 +163,7 @@ class PeakPickingOptions:
 @dataclass(frozen=True)
 class PeakMatrixOptions:
     """Options for extracting the peak intensity matrix (X)."""
+    __module__ = "pymsix.params"
 
     tol_da: Optional[float] = None
     tol_ppm: Optional[float] = None
@@ -196,6 +200,7 @@ class RecalibrationOptions:
         n_peaks: Number of top intense peaks per spectrum to use for hit search (e.g., 1000).
         min_hits_for_fit: Minimum number of hits (after ROI) needed to fit the RANSAC model (e.g., 20).
     """
+    __module__ = "pymsix.params"
 
     # Matching tolerance (one must be provided)
     tol_da: float = 0.03
@@ -240,6 +245,7 @@ class MassClusteringOptions:
     The ``method`` parameter selects between candidate-based clustering
     (``"candidates"``) and colocalization-based clustering (``"colocalization"``).
     """
+    __module__ = "pymsix.params"
 
     method: Literal["candidates", "colocalization"] = "candidates"
 
@@ -297,6 +303,7 @@ class KendrickPlotOptions:
     """
     Paramètres de configuration pour la génération de diagrammes de Kendrick.
     """
+    __module__ = "pymsix.params"
 
     # Paramètres de base Kendrick
     base: Union[str, float, Tuple[float, float]] = "CH2"
