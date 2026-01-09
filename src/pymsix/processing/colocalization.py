@@ -1,4 +1,17 @@
-"""Cosine colocalization utilities for MSI ion images."""
+"""
+Ion Image Colocalization Utilities
+==================================
+
+This module provides efficient methods to compute spatial colocalization between 
+ion images using cosine similarity. It is designed to handle large-scale MSI 
+datasets by providing both dense and memory-efficient sparse (Top-K) 
+computation modes.
+
+Colocalization analysis helps in identifying highly correlated m/z images, 
+which is a crucial step for adduct identification and molecular family grouping.
+
+
+"""
 
 from __future__ import annotations
 
@@ -14,8 +27,34 @@ if TYPE_CHECKING:  # pragma: no cover
 
 @dataclass
 class CosineColocParams:
-    """Parameters controlling cosine-based ion colocalization computation."""
+    """
+    Parameters controlling cosine-based ion colocalization computation.
 
+    Attributes
+    ----------
+    layer : str, optional
+        Name of the ``adata.layers`` entry to use. If None, uses ``adata.X``.
+    dtype : Union[np.dtype, str], default "float32"
+        Numerical precision for the computation and the resulting matrix.
+    mode : {"dense", "topk_sparse"}, default "topk_sparse"
+        Computation and storage strategy. Use ``"topk_sparse"`` for large 
+        datasets to avoid memory overflow.
+    topk : int, default 50
+        Only keep the top K most similar ions for each variable in 
+        sparse mode.
+    min_sim : float, default 0.2
+        Similarity threshold. Values below this are treated as zero in 
+        sparse mode.
+    chunk_size : int, default 256
+        Number of variables to process at once during block-wise sparse 
+        computation.
+    symmetrize : bool, default True
+        Ensure the output matrix is symmetric ($S_{ij} = S_{ji}$).
+    include_self : bool, default False
+        Whether to keep the diagonal (self-similarity of 1.0) in the matrix.
+    store_varp_key : str, optional, default "ion_cosine"
+        Key used to store the resulting matrix in ``adata.varp``.
+    """
     layer: Optional[str] = None
     dtype: Union[np.dtype, str] = "float32"
     mode: Literal["dense", "topk_sparse"] = "topk_sparse"
@@ -28,6 +67,28 @@ class CosineColocParams:
 
 
 def _get_X(msicube: "MSICube", layer: Optional[str]) -> Union[np.ndarray, sp.spmatrix]:
+    """
+    Extract the data matrix from the associated AnnData object.
+
+    Parameters
+    ----------
+    msicube : MSICube
+        The MSICube instance containing the data.
+    layer : str, optional
+        Specific layer name to extract. If None, uses ``adata.X``.
+
+    Returns
+    -------
+    Union[np.ndarray, sp.spmatrix]
+        The data matrix (samples x variables).
+
+    Raises
+    ------
+    ValueError
+        If the AnnData object is not initialized.
+    KeyError
+        If the specified layer is missing.
+    """
     adata = msicube.adata
     if adata is None:
         raise ValueError("MSICube.adata is None. Run data extraction first.")
@@ -42,6 +103,19 @@ def _get_X(msicube: "MSICube", layer: Optional[str]) -> Union[np.ndarray, sp.spm
 
 
 def _col_l2_norms(X: Union[np.ndarray, sp.spmatrix]) -> np.ndarray:
+    """
+    Compute the L2 norm for each column of the matrix.
+
+    Parameters
+    ----------
+    X : Union[np.ndarray, sp.spmatrix]
+        Input matrix of shape (n_samples, n_variables).
+
+    Returns
+    -------
+    np.ndarray
+        1D array of shape (n_variables,) containing L2 norms.
+    """
     if sp.issparse(X):
         return np.sqrt(X.power(2).sum(axis=0)).A1
     return np.linalg.norm(X, axis=0)
@@ -50,6 +124,23 @@ def _col_l2_norms(X: Union[np.ndarray, sp.spmatrix]) -> np.ndarray:
 def _normalize_columns(
     X: Union[np.ndarray, sp.spmatrix], norms: np.ndarray, dtype: np.dtype
 ) -> Union[np.ndarray, sp.spmatrix]:
+    """
+    Normalize columns of a matrix to unit L2 length.
+
+    Parameters
+    ----------
+    X : Union[np.ndarray, sp.spmatrix]
+        Input matrix to normalize.
+    norms : np.ndarray
+        Pre-computed L2 norms for each column.
+    dtype : np.dtype
+        Desired output data type.
+
+    Returns
+    -------
+    Union[np.ndarray, sp.spmatrix]
+        Column-normalized matrix.
+    """
     norms = norms.astype(dtype, copy=False)
     inv = np.zeros_like(norms)
     nz = norms > 0
@@ -64,6 +155,21 @@ def _normalize_columns(
 
 
 def _cosine_dense(Xn: Union[np.ndarray, sp.spmatrix], include_self: bool) -> np.ndarray:
+    """
+    Compute the full cosine similarity matrix.
+
+    Parameters
+    ----------
+    Xn : Union[np.ndarray, sp.spmatrix]
+        Column-normalized matrix (unit length variables).
+    include_self : bool
+        Whether to keep the diagonal (self-similarity) as 1.0 or set to 0.0.
+
+    Returns
+    -------
+    np.ndarray
+        Dense similarity matrix of shape (n_variables, n_variables).
+    """
     if sp.issparse(Xn):
         S = (Xn.T @ Xn).toarray()
     else:
@@ -84,6 +190,40 @@ def _cosine_topk_sparse(
     symmetrize: bool,
     include_self: bool,
 ) -> sp.csr_matrix:
+    """
+    Compute a sparsified cosine similarity matrix using top-K neighbors.
+
+    Processes the variables in chunks to manage memory and applies filtering
+    based on similarity thresholds and neighbor counts.
+
+    Parameters
+    ----------
+    Xn_csc : sp.csc_matrix
+        Column-normalized sparse matrix in CSC format.
+    topk : int
+        Number of highest similarity neighbors to keep per variable.
+    min_sim : float
+        Minimum similarity threshold to consider a match.
+    chunk_size : int
+        Number of variables to process per iteration.
+    symmetrize : bool
+        If True, ensures the output matrix is symmetric using ``max(S, S.T)``.
+    include_self : bool
+        Whether to include the diagonal elements.
+
+    Returns
+    -------
+    sp.csr_matrix
+        Sparse similarity matrix (n_variables, n_variables).
+
+    Examples
+    --------
+    >>> import scipy.sparse as sp
+    >>> X = sp.random(100, 50, density=0.1, format='csc')
+    >>> # ... normalization ...
+    >>> S = _cosine_topk_sparse(X, topk=5, min_sim=0.1, chunk_size=10, 
+    ...                         symmetrize=True, include_self=False)
+    """
     n_obs, n_vars = Xn_csc.shape
     rows_all: list[np.ndarray] = []
     cols_all: list[np.ndarray] = []
@@ -156,20 +296,53 @@ def compute_mz_cosine_colocalization(
     *,
     params: CosineColocParams = CosineColocParams(),
 ) -> Union[np.ndarray, sp.csr_matrix]:
-    """Compute cosine similarity between ion images stored on an :class:`MSICube`.
+    """
+    Compute cosine similarity between ion images stored on an MSICube.
+
+    This function calculates the spatial correlation between every pair of 
+    ion images. It first normalizes each ion image by its L2 norm (spatial 
+    intensity vector) and then computes the dot product.
 
     Parameters
     ----------
     msicube : MSICube
-        Cube containing an AnnData object with ion images in ``adata.X`` or a specified
-        ``adata.layers`` entry.
+        The MSICube instance containing an AnnData object with ion images.
     params : CosineColocParams, optional
-        Controls storage location, sparsity mode, and masking behavior.
+        A configuration object controlling computation behavior, sparsity, 
+        and storage. If not provided, default parameters are used.
 
     Returns
     -------
-    S : ndarray | scipy.sparse.csr_matrix
-        Cosine similarity matrix between variables (ions).
+    S : np.ndarray or scipy.sparse.csr_matrix
+        A square matrix of shape ``(n_vars, n_vars)`` containing the cosine 
+        similarities. Returns a dense NumPy array if `mode="dense"`, 
+        otherwise a Scipy CSR sparse matrix.
+
+    Notes
+    -----
+    The cosine similarity $S$ between two ion images (vectors) $u$ and $v$ is 
+    calculated as:
+    
+    $$S(u, v) = \frac{u \cdot v}{\|u\|_2 \|v\|_2}$$
+
+    In ``"topk_sparse"`` mode, the function uses a block-wise approach to 
+    remain memory-efficient even with tens of thousands of ions.
+
+    
+
+    The result is automatically stored in ``msicube.adata.varp[params.store_varp_key]`` 
+    and the parameters are logged in ``msicube.adata.uns``.
+
+    Examples
+    --------
+    >>> from pymsix.processing.colocalization import compute_mz_cosine_colocalization, CosineColocParams
+    >>> # Standard sparse computation keeping only top 10 neighbors
+    >>> params = CosineColocParams(topk=10, min_sim=0.3)
+    >>> sim_matrix = compute_mz_cosine_colocalization(msicube, params=params)
+    
+    >>> # To check the similarity between the first two ions:
+    >>> if not sp.issparse(sim_matrix):
+    ...     print(f"Similarity: {sim_matrix[0, 1]:.3f}")
     """
 
     X = _get_X(msicube, params.layer)

@@ -1,3 +1,18 @@
+"""
+Ion Clustering Utilities
+========================
+
+This module provides graph-based clustering methods to group ions based on 
+chemical or spatial similarity. It leverages the Leiden algorithm to find 
+communities in large molecular networks.
+
+Two main clustering strategies are supported:
+1. **Network Annotation**: Building edges based on known mass differences 
+   (e.g., adducts, isotopic shifts).
+2. **Colocalization Clustering**: Building edges based on spatial 
+   correlation between ion images.
+"""
+
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
@@ -6,6 +21,19 @@ from typing import Optional, Callable, Tuple, Union, Any, Dict
 
 # --- helper: singleton communities -> -1 (counted as a single cluster)
 def _singletons_to_minus1(labels: np.ndarray) -> np.ndarray:
+    """
+    Convert single-member cluster labels to -1 (noise).
+
+    Parameters
+    ----------
+    labels : np.ndarray
+        Array of integer labels (e.g., from clustering).
+
+    Returns
+    -------
+    np.ndarray
+        Cleaned labels where all singletons are replaced by -1.
+    """
     from collections import Counter
 
     lab = np.asarray(labels, dtype=int)
@@ -18,6 +46,27 @@ def _singletons_to_minus1(labels: np.ndarray) -> np.ndarray:
 
 # --- helper: tolerance in Da for a target delta (supports ('da', v) or ('ppm', v))
 def _tol_da_for(target_delta: float, tol: Union[float, Tuple[str, float]]) -> float:
+    """
+    Calculate tolerance in Dalton (Da) for a specific target mass difference.
+
+    Parameters
+    ----------
+    target_delta : float
+        The theoretical or target mass difference (m/z or Da).
+    tol : Union[float, Tuple[str, float]]
+        The tolerance specification. If a float, it is treated as Da.
+        If a tuple, format must be ('da', value) or ('ppm', value).
+
+    Returns
+    -------
+    float
+        The tolerance converted to absolute Dalton.
+
+    Raises
+    ------
+    ValueError
+        If the tolerance mode in the tuple is not 'da' or 'ppm'.
+    """
     if isinstance(tol, tuple):
         mode, val = tol
         mode = str(mode).lower()
@@ -35,6 +84,30 @@ def _tol_da_for(target_delta: float, tol: Union[float, Tuple[str, float]]) -> fl
 def _weight_from_score(
     score: float, scheme: Union[str, Callable[[float], float]] = "inv1p", **kw: Any
 ) -> float:
+    """
+    Transform a distance or error score into a graph edge weight.
+
+    Leiden and other community detection algorithms usually require weights 
+    where larger values indicate stronger similarities.
+
+    Parameters
+    ----------
+    score : float
+        The input score (usually an error or distance where smaller is better).
+    scheme : Union[str, Callable], default "inv1p"
+        The transformation method:
+        - "inv1p": $1 / (1 + score)$
+        - "exp": $\exp(-\alpha \cdot score)$, requires `alpha` in `kw`.
+        - "one": Returns 1.0 regardless of score.
+        - Callable: Custom function applied to the score.
+    **kw : Any
+        Additional parameters for specific schemes (e.g., `alpha` for "exp").
+
+    Returns
+    -------
+    float
+        The calculated edge weight.
+    """
     if callable(scheme):
         return float(scheme(float(score)))
     scheme = str(scheme).lower()
@@ -62,16 +135,43 @@ def _prune_edges_knn_df(
     dm_col: str = "dm",
 ) -> pd.DataFrame:
     """
-    k-NN pruning for an undirected edge list in a DataFrame.
+    Prune an undirected edge list to keep only the top-k neighbors per node.
 
-    Keeps only edges that are among the top-k neighbors of a node, ranked by:
-    1) larger weight first,
-    2) smaller mass error (err),
-    3) smaller candidate score.
-    4) smaller :math:`\Delta m` (dm).
+    Edges are ranked based on a hierarchical key:
+    1. Maximum weight (descending)
+    2. Minimum absolute error (ascending)
+    3. Minimum candidate score (ascending)
+    4. Minimum delta mass (ascending)
 
-    mode="union": keep edge if it's in top-k of either endpoint.
-    mode="mutual": keep edge only if it's in top-k of both endpoints.
+    Parameters
+    ----------
+    n_nodes : int
+        Total number of nodes in the graph.
+    edges_df : pd.DataFrame
+        DataFrame containing edge list with columns 'i' and 'j' (node indices).
+    k : int
+        The number of neighbors to keep for each node.
+    mode : {"union", "mutual"}, default "union"
+        - "union": Keep edge if it is in the top-k for node `i` OR node `j`.
+        - "mutual": Keep edge only if it is in the top-k for BOTH node `i` AND node `j`.
+    weight_col : str, default "weight"
+        Column name for weights (primary sorting key).
+    err_col : str, default "err"
+        Column name for mass error.
+    score_col : str, default "cand_score"
+        Column name for the candidate score.
+    dm_col : str, default "dm"
+        Column name for the $\Delta m$ value.
+
+    Returns
+    -------
+    pd.DataFrame
+        A pruned DataFrame containing only the selected edges.
+
+    Notes
+    -----
+    If $k$ is None or non-positive, or if the DataFrame is empty, the original 
+    DataFrame is returned.
     """
     if k is None or k <= 0 or edges_df.empty:
         return edges_df
@@ -139,95 +239,59 @@ def cluster_masses_with_candidates(
     knn_mode: str = "union",  # "union" or "mutual"
 ) -> dict[str, object]:
     """
-    Build a graph on experimental masses using an external catalog of mass differences
-    and cluster it using the Leiden algorithm.
+    Cluster masses by matching experimental m/z differences to a chemical catalog.
+
+    This function builds a graph where nodes are experimental m/z values. 
+    An edge is created between two nodes if the difference between their 
+    masses matches a candidate mass difference (e.g., $Na^+ - H^+$) 
+    within a specified tolerance.
 
     Parameters
     ----------
-    masses : array-like of shape (n,)
-        Experimental m/z values (treated as masses).
-
-    candidates_df : pandas.DataFrame
-        Table of candidate mass differences.
-        Must contain at least ``delta_col`` and ``score_col`` columns.
-        Each row represents a candidate mass difference :math:`\\Delta m` (in Da)
-        with an associated score where smaller values are better.
-
-    delta_col : str
-        Column name containing the candidate mass difference :math:`\\Delta m` in Dalton.
-
-    score_col : str
-        Column name containing the candidate score (positive, smaller is better).
-
-    label_col : str or None
-        Optional column name containing a candidate label
-        (e.g. atomic composition or CHON delta string).
-
-    tol : float or ('da', value) or ('ppm', value)
-        Matching tolerance.
-        If given in ppm, the tolerance is applied around each candidate
-        mass difference :math:`\\Delta m`.
-
-    edge_max_delta_m : float or None
-        If provided, edges are only considered when
-        :math:`|m_i - m_j| \\leq` ``edge_max_delta_m``.
-
-    keep_mask : numpy.ndarray or None
-        Optional NxN binary matrix.
-        If provided, edges are only added where ``keep_mask[i, j] == 1``.
-        Only the upper triangle (``i < j``) is read; the diagonal is ignored.
-
-    resolution : float
-        Leiden resolution parameter.
-
-    weight_transform : {"inv1p", "exp", "one"} or callable
-        Transformation applied to the candidate score to obtain a graph weight
-        (larger weights indicate stronger connections).
-
-    weight_kwargs : dict or None
-        Optional keyword arguments passed to the weight transform.
-
-    return_graph : bool
-        If True, also return the underlying ``igraph.Graph`` object.
+    masses : array-like
+        The experimental m/z values to cluster.
+    candidates_df : pd.DataFrame
+        A "catalog" of expected mass shifts. Must contain a column for 
+        the mass difference (delta) and a quality score.
+    delta_col : str, default "delta_da"
+        The column in `candidates_df` containing the $\Delta m$ in Daltons.
+    score_col : str, default "score"
+        The column containing candidate scores (smaller is better).
+    tol : float or tuple, default ("da", 0.005)
+        Matching tolerance. Can be absolute (Daltons) or relative (ppm).
+    resolution : float, default 1.0
+        The Leiden resolution parameter. Higher values lead to more, 
+        smaller clusters.
+    knn_k : int, optional
+        If provided, prunes the graph to keep only the top-k strongest 
+        edges per node.
+    return_graph : bool, default False
+        Whether to include the `igraph.Graph` object in the output.
 
     Returns
     -------
-    result : dict
-        Dictionary containing clustering results with the following keys:
-
-        ``labels``
-            ``numpy.ndarray`` of shape ``(n,)`` containing cluster labels.
-            Singleton clusters are labeled ``-1``.
-
-        ``n_clusters``
-            Total number of clusters (including ``-1``).
-
-        ``n_minus1``
-            Number of nodes labeled ``-1``.
-
-        ``compression``
-            Ratio ``n_clusters / n_samples``.
-
-        ``edges``
-            ``pandas.DataFrame`` describing graph edges with columns
-            ``["i", "j", "mz_i", "mz_j", "dm", "cand_delta", "cand_score",
-            "cand_label", "weight", "err", "tol_da_used"]``.
-
-        ``graph``
-            ``igraph.Graph`` object (only present if ``return_graph=True``).
+    dict
+        A dictionary containing:
+        - ``"labels"``: Cluster assignment for each mass (singletons are -1).
+        - ``"n_clusters"``: Total number of clusters detected.
+        - ``"edges"``: A DataFrame of all matched chemical relationships.
+        - ``"compression"``: Ratio of clusters to total input masses.
 
     Notes
     -----
-    The matching procedure selects, for each mass pair, the candidate with the
-    lowest score among those within tolerance. Remaining ties are broken by the
-    smallest absolute mass error:
+    The algorithm breaks ties between multiple matching candidates by 
+    selecting the one with the lowest score, then the lowest mass error.
 
-    .. math::
+    
 
-        |\\Delta m_{exp} - \\Delta m_{candidate}|
-
-    The implementation relies on ``python-igraph`` and ``leidenalg``.
-    Ensure that system-level dependencies for igraph are correctly installed.
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> from pymsix.processing.clustering import cluster_masses_with_candidates
+    >>> # Catalog of common adducts/isotopic shifts
+    >>> catalog = pd.DataFrame({"delta_da": [1.0033, 21.9819], "score": [0.1, 0.2]})
+    >>> results = cluster_masses_with_candidates(mass_list, catalog, tol=("ppm", 5.0))
+    >>> print(f"Found {results['n_clusters']} molecular families.")
     """
     weight_kwargs = weight_kwargs or {}
 
@@ -436,55 +500,37 @@ def cluster_masses_from_colocalization(
     knn_mode: str = "union",
     return_graph: bool = False,
 ) -> dict[str, object]:
-    """Cluster m/z values using a cosine colocalization matrix and Leiden.
+    """
+    Cluster ions based on spatial colocalization similarity.
 
-    This function is analogous to :func:`cluster_masses_with_candidates` but
-    operates directly on a cosine colocalization matrix (e.g., the output of
-    :func:`pymsix.processing.colocalization.compute_mz_cosine_colocalization`).
+    Instead of using chemical knowledge, this function groups ions that 
+    look the same spatially. It uses a similarity matrix (typically 
+    cosine similarity) to build a graph of co-occurring molecular features.
 
     Parameters
     ----------
-    coloc_matrix : np.ndarray | scipy.sparse.spmatrix
-        Square matrix of cosine similarities between ions. Only the upper
-        triangle is used.
-    keep_mask : np.ndarray | None
-        Optional NxN binary matrix; if provided, edges are only added where
-        ``keep_mask[i, j]`` is ``True`` for ``i < j``. The diagonal is ignored.
-    resolution : float
-        Leiden resolution_parameter.
-    edge_max_delta_cosine : float | None
-        Minimum cosine similarity required to keep an edge. Edges with cosine
-        smaller than this value are discarded.
-    knn_k : int | None
-        If provided, retain only the top-k neighbors per node using
-        :func:`_prune_edges_knn_df`.
-    knn_mode : {"union", "mutual"}
-        k-NN pruning mode; see :func:`_prune_edges_knn_df`.
-    return_graph : bool
-        If True, return the igraph Graph object built on the filtered edges.
+    coloc_matrix : np.ndarray or sparse matrix
+        A square similarity matrix where `coloc[i, j]` is the correlation 
+        between ion image $i$ and $j$.
+    edge_max_delta_cosine : float, optional
+        Minimum similarity threshold. Edges with similarity below this 
+        value are ignored.
+    resolution : float, default 1.0
+        Leiden resolution parameter for community detection.
+    knn_k : int, optional
+        Retain only the top-k most similar spatial neighbors for each ion.
 
     Returns
     -------
-    result : dict
-        Dictionary containing the clustering results with the following keys:
+    dict
+        A dictionary with keys: ``"labels"``, ``"n_clusters"``, ``"edges"``, 
+        and optionally ``"graph"``.
 
-        ``labels``
-            ``numpy.ndarray`` of shape ``(n,)`` with singleton clusters labeled ``-1``.
-
-        ``n_clusters``
-            Total number of clusters (including ``-1``).
-
-        ``n_minus1``
-            Number of nodes labeled ``-1``.
-
-        ``compression``
-            Ratio ``n_clusters / n_samples``.
-
-        ``edges``
-            ``pandas.DataFrame`` with columns ``["i", "j", "cosine", "weight"]``.
-
-        ``graph``
-            ``igraph.Graph`` object (only if ``return_graph=True``).
+    Notes
+    -----
+    This method is purely data-driven and does not require a chemical 
+    database. It is highly effective for discovering adducts and 
+    fragments that are strictly co-localized in tissue.
     """
 
     if resolution <= 0:

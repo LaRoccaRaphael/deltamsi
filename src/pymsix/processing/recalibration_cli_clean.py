@@ -1,14 +1,14 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-CLI recalibration for imzML using the refactored core in `recalibration_core.py`.
+MSI Recalibration CLI and I/O Utilities
+=======================================
 
-
-Example
--------
-python recalibration_cli_clean.py \
-  -i input.imzML -db calibrants.txt -o output.imzML \
-  --tol-da 0.03 --kde-bw-da 0.002 --roi-da 0.02 --n-peaks 1000
+This module serves as the primary entry point for batch processing imzML 
+recalibration. It leverages a robust workflow involving:
+1. Identifying high-intensity peaks per pixel.
+2. Matching peaks against a known database (hits generation).
+3. Estimating the mass shift via Kernel Density Estimation (KDE).
+4. Refining the calibration using RANSAC linear regression.
+5. Exporting the corrected data to a new imzML file.
 """
 
 from __future__ import annotations
@@ -38,6 +38,40 @@ def write_corrected_msi(
     db_masses_sorted: np.ndarray,
     params: RecalParams,
 ) -> None:
+    """
+    Read an imzML file, apply pixel-wise recalibration, and write results.
+
+    This function iterates through every spectrum in the input file. For 
+    each spectrum, it attempts to find a mass correction model. If successful, 
+    the corrected m/z array is written to the output file; otherwise, the 
+    spectrum is skipped to ensure data quality.
+
+    Parameters
+    ----------
+    imzml_path : str
+        Path to the source .imzML file.
+    out_imzml_path : str
+        Path where the recalibrated .imzML (and .ibd) will be saved.
+    db_masses_sorted : np.ndarray
+        A sorted 1D array of exact reference masses used for alignment.
+    params : RecalParams
+        A configuration dataclass containing tolerances, KDE settings, 
+        and RANSAC thresholds.
+
+    Notes
+    -----
+    The function enforces quality controls:
+    * Pixels with fewer than 30 peaks are ignored.
+    * Pixels with fewer than 10 database hits are ignored.
+    * Failure to find a finite error mode via KDE results in no correction.
+
+    Examples
+    --------
+    >>> from pymsix.processing.recalibration_core import RecalParams
+    >>> params = RecalParams(tol_da=0.02, n_peaks=500)
+    >>> db = np.array([149.023, 227.031, 413.211])
+    >>> write_corrected_msi("input.imzML", "output.imzML", db, params)
+    """
     with ImzMLWriter(out_imzml_path) as w:
         p = ImzMLParser(imzml_path, parse_lib="ElementTree")
 
@@ -78,6 +112,15 @@ def write_corrected_msi(
 
 
 def build_argparser() -> argparse.ArgumentParser:
+    """
+    Construct the argument parser for the recalibration CLI.
+
+    Returns
+    -------
+    argparse.ArgumentParser
+        An initialized parser with options for input/output paths and 
+        recalibration hyperparameters.
+    """
     ap = argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("-i", "--input", required=True, help="Input imzML")
     ap.add_argument(
@@ -113,6 +156,17 @@ def build_argparser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """
+    Main entry point for the recalibration script.
+
+    Loads the database, initializes parameters from CLI arguments, 
+    and executes the `write_corrected_msi` workflow.
+
+    Usage
+    -----
+    From the terminal:
+    $ python recalibration_cli.py -i in.imzML -db db.txt -o out.imzML --tol-ppm 10
+    """
     args = build_argparser().parse_args()
 
     params = RecalParams(

@@ -1,4 +1,15 @@
-"""Peak picking functions for MS1 spectra."""
+"""
+Peak Picking and Matrix Extraction
+==================================
+
+This module provides functions to identify relevant m/z features from mean 
+spectra and project individual pixel data onto these features.
+
+The workflow typically follows these steps:
+1. Identify peaks in a global mean spectrum using `peak_picking`.
+2. Extract intensities for these specific peaks across all pixels using 
+   `extract_peak_matrix` to create a (pixels x features) dataset.
+"""
 
 import numpy as np
 from scipy.interpolate import interp1d
@@ -15,21 +26,38 @@ def peak_picking(
     options: PeakPickingOptions,
 ) -> np.ndarray:
     """
-    Peak picking on a mean spectrum, with Da and ppm distance thresholds.
+    Perform greedy peak picking on a spectrum with distance constraints.
+
+    This function identifies local maxima and filters them based on a 
+    combination of intensity (ranking) and m/z distance. It ensures that 
+    selected peaks are separated by at least `distance_da` or `distance_ppm`.
 
     Parameters
     ----------
     mzs : np.ndarray
-        1D array of m/z values (can be irregular, can have holes).
+        1D array of m/z values from a mean spectrum.
     intensities : np.ndarray
-        1D array of intensities, same length as `mzs`.
+        1D array of intensities corresponding to `mzs`.
     options : PeakPickingOptions
-        Configuration object containing topn, binning_p, distance_da, and distance_ppm.
+        Configuration object specifying:
+        
+        * **topn**: Maximum number of peaks to retain.
+        * **binning_p**: Internal resolution for peak localization.
+        * **distance_da**: Minimum distance between peaks in Daltons.
+        * **distance_ppm**: Minimum distance between peaks in ppm.
 
     Returns
     -------
     selected_mzs : np.ndarray
-        m/z positions of selected peaks (sorted ascending).
+        Sorted 1D array of selected peak m/z positions.
+
+    Notes
+    -----
+    The greedy selection logic prioritizes intensity: the highest peak in a 
+    region is always kept, and neighboring candidates within the tolerance 
+    window are discarded.
+
+    
     """
     options.validate()
 
@@ -204,33 +232,50 @@ def extract_peak_matrix(
     options: PeakMatrixOptions,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Given an imzML file, a list of m/z values and a tolerance (Da or ppm),
-    build a matrix X where:
+    Extract peak intensities from an imzML file into a 2D matrix.
 
-      - rows = spectra (pixels),
-      - columns = target m/z,
-      - X[i, j] = intensity of m/z[j] in spectrum i (max within tolerance).
-
-    Also returns an array of (x, y) coordinates for each spectrum.
+    For every pixel in the MSI dataset, this function finds the maximum 
+    intensity within a tolerance window (Da or ppm) around each target m/z. 
+    The result is a feature matrix ready for multivariate analysis (PCA, 
+    clustering, etc.).
 
     Parameters
     ----------
     imzml_path : str
         Path to the imzML file.
-    mz_list : array-like
-        List/array of target m/z values.
-    tol_da : float, optional
-        Tolerance in Da (one-sided half-width).
-    tol_ppm : float, optional
-        Tolerance in ppm (half-width). Only one of tol_da or tol_ppm
-        must be provided.
+    target_mzs : np.ndarray
+        Sorted array of target m/z values (e.g., from `peak_picking`).
+    options : PeakMatrixOptions
+        Configuration object specifying the extraction tolerance:
+        
+        * **tol_da**: Absolute window half-width in Daltons.
+        * **tol_ppm**: Relative window half-width in ppm.
 
     Returns
     -------
     X : np.ndarray
-        2D array of shape (n_spectra, n_targets).
+        2D array of shape (n_pixels, n_features) containing intensities.
     coords : np.ndarray
-        2D array of shape (n_spectra, 2) with [x, y] per spectrum.
+        2D array of shape (n_pixels, 2) containing [x, y] coordinates.
+
+    Notes
+    -----
+    **Peak Alignment**
+    Since mass accuracy varies slightly across a tissue section, this 
+    function uses a "max-over-window" approach. For each target m/z $M_j$, 
+    the intensity $X_{ij}$ for pixel $i$ is:
+    
+    $$X_{ij} = \max \{ I(m) \mid m \in [M_j - \text{tol}, M_j + \text{tol}] \}$$
+
+    
+
+    Examples
+    --------
+    >>> from pymsix.processing.peaks import extract_peak_matrix
+    >>> # Extract 500 features with 5 ppm tolerance
+    >>> opts = PeakMatrixOptions(tol_ppm=5.0)
+    >>> X, coords = extract_peak_matrix("data.imzML", picked_mzs, opts)
+    >>> print(f"Matrix shape: {X.shape}")
     """
     options.validate()
 

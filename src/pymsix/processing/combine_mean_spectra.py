@@ -1,3 +1,17 @@
+"""
+Spectral Combination Utilities
+==============================
+
+This module provides tools for merging multiple mean mass spectra into a single 
+representative "mean-of-mean" spectrum. 
+
+Because different MSI acquisitions may have slightly different m/z calibrations 
+ou ranges, this module uses linear interpolation to project all spectra onto a 
+common, high-resolution binned grid before averaging.
+
+
+"""
+
 import numpy as np
 from typing import Iterable, Tuple, List
 from scipy.interpolate import interp1d
@@ -15,30 +29,63 @@ def combine_mean_spectra(
     """
     Combine several mean spectra into a single mean-of-mean spectrum.
 
+    This function aligns multiple spectra by interpolating them onto a common 
+    m/z axis. It supports global normalization (TIC) to ensure that samples 
+    with different absolute intensities contribute equally to the final 
+    consensus spectrum.
+
     Parameters
     ----------
-    spectra
-        Iterable of (mzs, intensities) arrays.
-        Each mzs and intensities must be 1D and same length.
-    binning_p : float
-        Bin width in Da for the common m/z axis (default: 1e-4).
-    use_intersection : bool
-        If True, the common axis is built on the overlapping m/z range:
-            [max(min(mzs)), min(max(mzs))]
-        If False, it uses the union:
-            [min(min(mzs)), max(max(mzs))] and extrapolated regions are zero.
-    tic_normalize : bool
-        If True, TIC-normalize each mean spectrum on the common axis
-        (divide by sum of intensities) before averaging.
-    compress_axis : bool
-        If True, drop bins where the final mean intensity is zero.
+    spectra : Iterable[Tuple[np.ndarray, np.ndarray]]
+        An iterable of spectra, where each spectrum is a tuple of (m/z, intensity) 
+        1D arrays. Arrays must have the same length within each tuple.
+    options : GlobalMeanSpectrumOptions
+        A configuration object containing:
+        
+        * **binning_p**: The step size (resolution) of the common m/z grid in Da.
+        * **use_intersection**: If True, only the m/z range common to all 
+          spectra is kept. If False, the union of all ranges is used.
+        * **tic_normalize**: Whether to normalize each spectrum to unit 
+          total intensity on the common grid before averaging.
+        * **compress_axis**: If True, removes m/z bins where the final 
+          mean intensity is exactly zero.
 
     Returns
     -------
     mz_axis : np.ndarray
-        Common m/z axis.
+        The generated common m/z axis.
     mean_intensity : np.ndarray
-        Mean of mean spectra on that axis.
+        The averaged intensity values corresponding to `mz_axis`.
+
+    Raises
+    ------
+    ValueError
+        If the input spectra are empty, have inconsistent array shapes, 
+        or if `use_intersection=True` is requested for non-overlapping spectra.
+    RuntimeError
+        If no valid spectra remain after the processing steps.
+
+    Notes
+    -----
+    The interpolation is performed using a linear method via ``scipy.interpolate.interp1d``. 
+    Values outside the original m/z range of a spectrum are filled with zeros.
+    
+    [Image showing the difference between intersection and union m/z range strategies]
+
+    This process is typically used to generate a reference spectrum for 
+    global peak picking in multi-sample MSI studies.
+
+    Examples
+    --------
+    >>> from pymsix.params.options import GlobalMeanSpectrumOptions
+    >>> from pymsix.processing.spectra import combine_mean_spectra
+    >>> 
+    >>> # Configure averaging options
+    >>> opts = GlobalMeanSpectrumOptions(binning_p=0.0001, tic_normalize=True)
+    >>> 
+    >>> # spectra = [(mz1, int1), (mz2, int2), ...]
+    >>> mz_avg, int_avg = combine_mean_spectra(spectra, options=opts)
+    >>> print(f"Combined spectrum has {len(mz_avg)} bins.")
     """
 
     options.validate()

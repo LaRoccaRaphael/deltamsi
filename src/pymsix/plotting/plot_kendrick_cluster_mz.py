@@ -38,8 +38,42 @@ def _ensure_kendrick_coordinates(
     """
     Ensure that Kendrick coordinates exist in ``adata.varm`` and return them.
 
-    If the requested varm key is missing, coordinates are computed automatically using
-    :func:`compute_kendrick_varm` (default base ``CH2``) and stored before being returned.
+    This helper checks for existing Kendrick coordinates under the specified or 
+    default key. If missing, it triggers an automatic computation and updates 
+    the ``AnnData`` object. It also validates that existing data matches the 
+    requested calculation mode.
+
+    Parameters
+    ----------
+    adata : ad.AnnData
+        Annotated data object containing variable (m/z) information.
+    base : str or float or tuple of (float, float)
+        The Kendrick base used for scaling (e.g., "CH2", 14.0156, or (14.0156, 14)).
+    kmd_mode : {"fraction", "defect"}
+        The type of Kendrick coordinate to ensure:
+        - "fraction": The fractional part of the Kendrick mass.
+        - "defect": Nominal Kendrick mass minus exact Kendrick mass.
+    kendrick_varm_key : str, optional
+        Specific key in ``adata.varm`` to look for. If None, a default key 
+        is generated using the base and mode.
+    mz_key : str
+        Key in ``adata.var`` containing the m/z values.
+
+    Returns
+    -------
+    target_key : str
+        The key in ``adata.varm`` where the coordinates are stored.
+    coords : NDArray[np.floating]
+        2D array of shape ``(n_vars, 2)`` containing [KM, KMD/KF].
+    info : dict, optional
+        Metadata associated with the calculation, retrieved from ``adata.uns``.
+
+    Raises
+    ------
+    ValueError
+        - If ``kmd_mode`` is not 'fraction' or 'defect'.
+        - If existing coordinates are not 2D or have fewer than 2 columns.
+        - If the stored ``kmd_mode`` in metadata conflicts with the requested mode.
     """
 
     if kmd_mode not in {"fraction", "defect"}:

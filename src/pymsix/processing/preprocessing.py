@@ -1,4 +1,14 @@
-"""Preprocessing utilities for :class:`~pymsix.core.msicube.MSICube`."""
+"""
+MSI Image-Space Preprocessing
+=============================
+
+This module provides spatial-aware filtering and intensity adjustment tools 
+for MSI data. It allows for:
+1. **Hotspot Removal**: Capping extreme intensities that bias visualization.
+2. **Thresholding**: Removing background noise based on intensity distributions.
+3. **Spatial Filtering**: Smoothing ion images using 2D median filters while 
+   preserving edges.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +24,29 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 def _get_matrix(msicube: "MSICube", layer: Optional[str]):
+    """
+    Internal helper to retrieve the intensity matrix from AnnData.
+
+    Parameters
+    ----------
+    msicube : MSICube
+        The MSICube instance containing the annotated data.
+    layer : str, optional
+        Name of the layer to retrieve. If None, the main matrix ``adata.X`` 
+        is returned.
+
+    Returns
+    -------
+    Union[np.ndarray, sp.spmatrix]
+        The intensity matrix (dense or sparse).
+
+    Raises
+    ------
+    ValueError
+        If ``msicube.adata`` is not yet initialized.
+    KeyError
+        If the specified ``layer`` does not exist in the AnnData object.
+    """
     adata = msicube.adata
     if adata is None:
         raise ValueError("MSICube.adata is None. Run data extraction first.")
@@ -28,6 +61,23 @@ def _get_matrix(msicube: "MSICube", layer: Optional[str]):
 
 
 def _set_matrix(msicube: "MSICube", layer: Optional[str], X):
+    """
+    Internal helper to store the intensity matrix back into AnnData.
+
+    Parameters
+    ----------
+    msicube : MSICube
+        The MSICube instance where data will be stored.
+    layer : str, optional
+        Name of the layer to update. If None, updates ``adata.X``.
+    X : array_like or sparse matrix
+        The new intensity data to be stored.
+
+    Raises
+    ------
+    ValueError
+        If ``msicube.adata`` is not yet initialized.
+    """
     adata = msicube.adata
     if adata is None:
         raise ValueError("MSICube.adata is None. Run data extraction first.")
@@ -39,6 +89,24 @@ def _set_matrix(msicube: "MSICube", layer: Optional[str], X):
 
 
 def _ensure_dense_float(X, dtype=np.float32) -> np.ndarray:
+    """
+    Internal helper to convert matrices to dense arrays for image processing.
+
+    This function is critical for algorithms that do not support sparse 
+    inputs (e.g., convolution, morphology, or certain scikit-image functions).
+
+    Parameters
+    ----------
+    X : array_like or sparse matrix
+        Input intensity data.
+    dtype : np.dtype, default np.float32
+        The desired numerical precision for the output array.
+
+    Returns
+    -------
+    np.ndarray
+        A dense NumPy array of the specified dtype.
+    """
     if sp.issparse(X):
         X = X.toarray()
     return np.asarray(X, dtype=dtype)
@@ -55,6 +123,9 @@ def _infer_grid_index(
 ) -> Tuple[int, int, np.ndarray]:
     """
     Map observations to a dense (H, W) grid index based on pixel coordinates.
+
+    This is used to transform the flattened MSI data (N pixels) into a 2D 
+    structure (Height x Width) required for spatial filters.
 
     Returns
     -------
@@ -105,7 +176,23 @@ def _infer_grid_index(
 
 @dataclass
 class MSIHotspotCapParams:
-    """Parameters for hotspot capping preprocessing."""
+    """
+    Parameters for hotspot capping.
+    
+    Attributes
+    ----------
+    q : float, default 0.99
+        Quantile threshold (0.0 to 1.0). Intensities above this value 
+        will be clipped to the quantile value.
+    layer_in : str, optional
+        The AnnData layer to process. If None, uses ``adata.X``.
+    layer_out : str, optional
+        The layer to store results. If None, overwrites the input.
+    chunk_size : int, default 256
+        Number of ion images to process simultaneously to optimize memory.
+    dtype : str or np.dtype, default "float32"
+        The numerical precision for processing.
+    """
 
     q: float = 0.99
     layer_in: Optional[str] = None
@@ -117,7 +204,16 @@ class MSIHotspotCapParams:
 def msi_cap_hotspots(
     msicube: "MSICube", *, params: MSIHotspotCapParams = MSIHotspotCapParams()
 ) -> None:
-    """Cap each ion image at its ``q``-quantile to remove hotspots."""
+    """
+    Cap ion images at a specific quantile to eliminate pixel hotspots.
+
+    In MSI, single pixels often show extreme intensities due to matrix 
+    crystals or electronic noise. This function caps intensities at the 
+    `q`-th quantile (default 99%), ensuring that visualizations are not 
+    dominated by a few outlier pixels.
+
+    
+    """
 
     X = _ensure_dense_float(_get_matrix(msicube, params.layer_in), dtype=np.dtype(params.dtype))
     _, n_vars = X.shape
@@ -135,7 +231,22 @@ def msi_cap_hotspots(
 
 @dataclass
 class MSIThresholdParams:
-    """Parameters for per-ion quantile thresholding."""
+    """
+    Parameters for per-ion quantile thresholding.
+
+    Attributes
+    ----------
+    q : float, default 0.5
+        The quantile below which intensities are removed.
+    mode : {"zero", "nan"}, default "zero"
+        Whether to set values below threshold to 0.0 or NaN.
+    layer_in : str, optional
+        Input layer in AnnData.
+    layer_out : str, optional
+        Output layer in AnnData.
+    chunk_size : int, default 256
+        Number of variables processed in a single block.
+    """
 
     q: float = 0.5
     mode: Literal["zero", "nan"] = "zero"
@@ -151,8 +262,9 @@ def msi_threshold_quantile(
     """
     Threshold ion images at the per-variable quantile ``q``.
 
-    Intensities below the threshold are set to ``0`` or ``NaN`` depending on
-    ``params.mode``.
+    This is a data-driven way to perform background subtraction. For each 
+    ion image, a threshold is calculated based on its own intensity 
+    distribution. Intensities below this limit are masked.
     """
 
     X = _ensure_dense_float(_get_matrix(msicube, params.layer_in), dtype=np.dtype(params.dtype))
@@ -175,7 +287,32 @@ def msi_threshold_quantile(
 
 @dataclass
 class MSIMedianFilterParams:
-    """Parameters for applying a 2D median filter to ion images."""
+    """
+    Parameters for applying a 2D median filter to ion images.
+
+    Attributes
+    ----------
+    size : int, default 3
+        The side length of the square median window (e.g., 3 for 3x3).
+    layer_in : str, optional
+        Source layer name.
+    layer_out : str, optional
+        Destination layer name.
+    x_key, y_key : str
+        Metadata keys for pixel coordinates.
+    spatial_key : str
+        Key for the spatial coordinate matrix in ``obsm``.
+    shape : tuple, optional
+        Explicit (Height, Width) for the spatial grid.
+    origin : {"min", "zero"}
+        Whether to offset coordinates to (0,0).
+    fill_value : float, default 0.0
+        Value used for pixels with no data in a non-rectangular grid.
+    nan_to_num_before : bool, default True
+        If True, replaces NaN values with `fill_value` before filtering.
+    chunk_size : int, default 64
+        Number of images processed per block. Keep low for large spatial grids.
+    """
 
     size: int = 3
     layer_in: Optional[str] = None
@@ -196,7 +333,29 @@ class MSIMedianFilterParams:
 def msi_median_filter_2d(
     msicube: "MSICube", *, params: MSIMedianFilterParams = MSIMedianFilterParams()
 ) -> None:
-    """Apply a 2D median filter to each ion image using pixel coordinates."""
+    """
+    Apply a 2D median filter to each ion image.
+
+    This function reconstructs a 2D spatial grid from the flattened MSI data 
+    and applies a median filter. It is highly effective at removing "salt-and-pepper" 
+    noise while preserving the sharp edges of biological structures.
+
+    Parameters
+    ----------
+    msicube : MSICube
+        The data cube to filter.
+    params : MSIMedianFilterParams
+        Configuration including:
+        * **size**: The kernel size (e.g., 3 for a 3x3 window).
+        * **x_key / y_key**: Coordinates used to reconstruct the 2D image.
+
+    Notes
+    -----
+    The function automatically handles non-rectangular ablation areas by 
+    mapping pixels to a dense grid and using a `fill_value` for empty regions.
+
+    
+    """
 
     X = _ensure_dense_float(_get_matrix(msicube, params.layer_in), dtype=np.dtype(params.dtype))
     _, n_vars = X.shape

@@ -1,4 +1,16 @@
-"""Kendrick mass utilities."""
+"""
+Kendrick Mass Defect (KMD) Utilities
+====================================
+
+This module provides tools for transforming standard m/z values into Kendrick 
+coordinates. It supports custom chemical bases, formula parsing, and 
+integration with AnnData objects.
+
+The transformation follows the standard formula:
+    Kendrick Mass (KM) = observed_mass * (nominal_base_mass / exact_base_mass)
+    Kendrick Mass Defect (KMD) = integer_mass - exact_mass (depending on mode)
+"""
+
 from __future__ import annotations
 
 import logging
@@ -43,8 +55,25 @@ _FORM_RX = re.compile(r"([A-Z][a-z]?)(\d*)")
 
 def _parse_formula_to_mass(formula: str) -> Tuple[float, float]:
     """
-    Return ``(exact_mass, nominal_mass)`` for a simple empirical formula like ``"CH2"``.
-    Parentheses/hydrates are not supported. ``'.'`` and ``'·'`` are ignored.
+    Parse a simple empirical formula into its exact and nominal masses.
+
+    Parameters
+    ----------
+    formula : str
+        Chemical formula string (e.g., "CH2", "C18H34O2"). Dots and mid-dots 
+        are ignored.
+
+    Returns
+    -------
+    exact_mass : float
+        The calculated monoisotopic exact mass.
+    nominal_mass : float
+        The calculated nominal (integer) mass.
+
+    Raises
+    ------
+    ValueError
+        If the formula is empty or contains unknown chemical elements.
     """
 
     s = str(formula).replace("·", "").replace(".", "").strip()
@@ -63,13 +92,25 @@ def _parse_formula_to_mass(formula: str) -> Tuple[float, float]:
 
 def _base_masses(base: Union[str, float, Tuple[float, float]]) -> Tuple[float, float]:
     """
-    Normalize a Kendrick base description into ``(exact_mass, nominal_mass)``.
+    Normalize a Kendrick base description into a numerical mass tuple.
 
     Parameters
     ----------
-    base:
-        Either an empirical formula (``"CH2"``), a float for the exact mass (nominal
-        inferred by rounding) or an explicit ``(exact, nominal)`` tuple.
+    base : Union[str, float, Tuple[float, float]]
+        Description of the Kendrick base:
+        - str: An empirical formula (e.g., "CH2").
+        - float: The exact mass (nominal mass will be inferred by rounding).
+        - tuple: Explicit (exact, nominal) masses.
+
+    Returns
+    -------
+    Tuple[float, float]
+        A tuple of (exact_mass, nominal_mass).
+
+    Raises
+    ------
+    ValueError
+        If the input type or format is unsupported.
     """
 
     if isinstance(base, tuple) and len(base) == 2:
@@ -87,7 +128,41 @@ def kendrick_coords(
     base: Union[str, float, Tuple[float, float]],
     kmd_mode: Literal["fraction", "defect"] = "fraction",
 ) -> dict[str, np.ndarray]:
-    """Compute Kendrick mass and defect coordinates for the provided masses."""
+    """
+    Compute Kendrick mass and defect coordinates for a set of masses.
+
+    This is a standalone utility that calculates rescaled masses based on 
+    a specified chemical unit (the "base").
+
+    Parameters
+    ----------
+    masses : Sequence[float]
+        Array or list of m/z values to transform.
+    base : str, float, or Tuple[float, float]
+        The repeating unit used for rescaling. 
+        - If ``str``: An empirical formula like "CH2" or "H2O".
+        - If ``float``: The exact mass of the unit.
+        - If ``tuple``: Explicit (exact_mass, nominal_mass).
+    kmd_mode : {"fraction", "defect"}, default "fraction"
+        - ``"fraction"``: $KM - \lfloor KM \rfloor$ (range [0, 1]).
+        - ``"defect"``: $round(KM) - KM$ (range [-0.5, 0.5]).
+
+    Returns
+    -------
+    dict of str to np.ndarray
+        A dictionary containing:
+        - ``"KM"``: The rescaled Kendrick Mass.
+        - ``"KMD_fraction"``: The fractional mass defect.
+        - ``"KMD_defect"``: The centered mass defect.
+        - ``"scale"``: The scaling factor used ($nominal / exact$).
+        - ``"base_exact"``: The exact mass of the base unit.
+
+    Examples
+    --------
+    >>> coords = kendrick_coords([300.21, 314.23], base="CH2")
+    >>> print(coords["KM"])
+    [299.89... 313.91...]
+    """
 
     masses_arr = np.asarray(masses, dtype=float)
     base_exact, base_nom = _base_masses(base)
@@ -115,7 +190,21 @@ def kendrick_coords(
 def default_kendrick_varm_key(
     base: Union[str, float, Tuple[float, float]], kmd_mode: Literal["fraction", "defect"]
 ) -> str:
-    """Generate a deterministic varm key for Kendrick coordinates."""
+    """
+    Generate a deterministic varm key for storing Kendrick coordinates.
+
+    Parameters
+    ----------
+    base : Union[str, float, Tuple[float, float]]
+        The Kendrick base used for the calculation.
+    kmd_mode : {"fraction", "defect"}
+        The type of Kendrick analysis performed.
+
+    Returns
+    -------
+    str
+        A formatted string key (e.g., "X_kendrick_CH2_defect").
+    """
 
     if isinstance(base, str):
         base_str = base
@@ -137,13 +226,45 @@ def compute_kendrick_varm(
     var_prefix: str = "kendrick",
 ) -> str:
     """
-    Compute Kendrick coordinates from ``adata.var[mz_key]`` and store them in ``adata.varm``.
+    Compute Kendrick coordinates and store them in ``adata.varm``.
 
-    The generated varm entry contains two columns: Kendrick mass (KM) and the corresponding
-    Kendrick mass defect (KMD) for the requested mode. Metadata about the computation is
-    stored in ``adata.uns`` under ``f"{varm_key}_info"``.
+    This function is the primary entry point for integrating KMD analysis 
+    into an AnnData workflow. It populates ``varm`` with a 2D array 
+    representing the Kendrick "latent space".
 
-    Returns the varm key used for storage.
+    Parameters
+    ----------
+    adata : ad.AnnData
+        The AnnData object containing variable metadata.
+    mz_key : str, default "mz"
+        Column in ``adata.var`` used as the raw mass input.
+    base : str, float, or Tuple[float, float], default "CH2"
+        The chemical base for the Kendrick transformation.
+    kmd_mode : {"fraction", "defect"}, default "fraction"
+        The calculation mode for the defect (Y-axis).
+    varm_key : str, optional
+        The key in ``adata.varm`` where the $(N_{vars}, 2)$ array is stored.
+        If None, a default key like ``"X_kendrick_CH2_fraction"`` is used.
+    store_1d_in_var : bool, default False
+        If True, also saves KM and KMD as individual columns in ``adata.var``.
+    var_prefix : str, default "kendrick"
+        Prefix for the columns if `store_1d_in_var` is True.
+
+    Returns
+    -------
+    str
+        The key used to store the coordinates in ``adata.varm``.
+
+    Notes
+    -----
+    The Kendrick transformation effectively "rotates" the mass spectrum 
+    data so that homologous series (e.g., polymers or lipids with different 
+    chain lengths) appear as horizontal lines.
+
+    
+
+    Metadata, including the scaling factor and exact mass of the base, 
+    is stored in ``adata.uns[f"{varm_key}_info"]``.
     """
 
     if mz_key not in adata.var.columns:

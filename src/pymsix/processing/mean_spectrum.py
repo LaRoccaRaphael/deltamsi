@@ -1,3 +1,17 @@
+"""
+Mean Spectrum Generation Utilities
+==================================
+
+This module provides efficient methods for aggregating thousands of individual 
+pixel spectra into a single representative mean spectrum. 
+
+It handles:
+1. **Binning**: Projecting high-resolution m/z values onto a fixed grid.
+2. **Normalization**: TIC-normalizing each pixel before aggregation.
+3. **Centroid Smoothing**: Converting discrete centroid peaks into Gaussian 
+   shapes to better estimate the underlying profile.
+"""
+
 from typing import Tuple
 import numpy as np
 from pyimzml.ImzMLParser import ImzMLParser
@@ -13,9 +27,24 @@ def _smooth_centroid_constant_da(
     tolerance_da: float,
 ) -> np.ndarray:
     """
-    Centroid smoothing with a constant Gaussian width in Da.
-    Equivalent to smearing each peak individually, but done as a
-    single convolution (much faster).
+    Apply Gaussian smoothing to a centroided spectrum using a fixed width in Da.
+
+    This function uses FFT convolution for high performance. The standard 
+    deviation of the Gaussian kernel is approximately ``tolerance_da / 4``.
+
+    Parameters
+    ----------
+    spike : np.ndarray
+        1D array containing intensities at binned positions.
+    binning_p : float
+        The width of each bin in Dalton (precision).
+    tolerance_da : float
+        The full width in Dalton used to define the smoothing kernel.
+
+    Returns
+    -------
+    np.ndarray
+        The smoothed spectrum intensities.
     """
     if tolerance_da <= 0:
         return spike.copy()
@@ -40,8 +69,28 @@ def _smooth_centroid_ppm(
     n_sigma: float = 3.0,
 ) -> np.ndarray:
     """
-    Centroid smoothing where Gaussian width is derived from instrument
-    accuracy in ppm: sigma_da(m/z) = m/z * mass_accuracy_ppm * 1e-6.
+    Apply Gaussian smoothing where the width scales with m/z (PPM).
+
+    The standard deviation (sigma) is calculated for each peak individually as:
+    $$\sigma_{Da}(m/z) = m/z \times \text{accuracy\_ppm} \times 10^{-6}$$
+
+    Parameters
+    ----------
+    spike : np.ndarray
+        1D array of binned intensities.
+    axis_mz : np.ndarray
+        1D array of m/z values corresponding to each bin center.
+    binning_p : float
+        Bin size in Dalton.
+    mass_accuracy_ppm : float
+        Instrumental accuracy in parts-per-million.
+    n_sigma : float, default 3.0
+        The number of standard deviations to include in the Gaussian tail.
+
+    Returns
+    -------
+    np.ndarray
+        The smoothed intensities.
     """
     out = np.zeros_like(spike, dtype=np.float64)
 
@@ -92,19 +141,60 @@ def compute_mean_spectrum(
     """
     Compute a mean spectrum from an imzML file using predefined options.
 
+    This function iterates through all pixels in an MSI dataset, normalizes the 
+    intensities, and accumulates them into a binned m/z axis. If the input 
+    data is in centroid mode, it applies Gaussian smoothing to reconstruct 
+    a pseudo-profile spectrum.
+
     Parameters
     ----------
     imzml_path : str
-        Path to the imzML file.
+        Path to the ``.imzML`` file on disk.
     options : MeanSpectrumOptions
-        Object containing all parameters for spectrum aggregation and smoothing.
+        Configuration object containing parameters for:
+        
+        * **min_mz / max_mz**: The spectral range to consider.
+        * **binning_p**: The width of each m/z bin (in Daltons).
+        * **mode**: Either "profile" or "centroid".
+        * **mass_accuracy_ppm**: Used for smoothing where the Gaussian 
+          width increases with m/z (standard for TOF and Orbitrap).
+        * **tolerance_da**: Used for smoothing with a fixed Gaussian width.
 
     Returns
     -------
     axis_mz : np.ndarray
-        m/z values of the mean spectrum (full axis).
+        The m/z values of the generated bins (filtered for non-zero intensities).
     mean_intensity : np.ndarray
-        Mean intensity values on that axis.
+        The mean intensity values corresponding to each bin.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the imzML file is missing or corrupted.
+    ValueError
+        If the options fail validation (e.g., negative bin width).
+
+    Notes
+    -----
+    **Smoothing Algorithms**
+    
+    * **Constant Da**: Applies a uniform smoothing kernel across the whole spectrum 
+      via FFT convolution.
+    * **PPM-based**: Adjusts the smoothing kernel width $\sigma$ dynamically as: 
+      $$\sigma(m/z) = \frac{m/z \times \text{ppm}}{10^6}$$
+      This accurately reflects the decreasing mass resolution at higher m/z 
+      values in most mass analyzers.
+
+    
+
+    Examples
+    --------
+    >>> from pymsix.params.options import MeanSpectrumOptions
+    >>> from pymsix.processing.spectra import compute_mean_spectrum
+    >>> 
+    >>> opts = MeanSpectrumOptions(min_mz=100, max_mz=1000, binning_p=0.001)
+    >>> mz, intensities = compute_mean_spectrum("sample.imzML", options=opts)
+    >>> print(f"Mean spectrum computed over {len(mz)} bins.")
     """
     options.validate()
 

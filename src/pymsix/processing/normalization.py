@@ -1,4 +1,15 @@
-"""Normalization utilities for MSI cubes."""
+"""
+Normalization Utilities for MSI
+==============================
+
+This module provides standard normalization workflows for Mass Spectrometry 
+Imaging (MSI) datasets. Normalization is essential to ensure that pixel 
+intensities are comparable across different regions of a tissue section or 
+between different samples.
+
+The primary method implemented here is TIC normalization, which scales 
+each spectrum so that the sum of all intensities equals a constant value.
+"""
 
 from __future__ import annotations
 
@@ -21,35 +32,62 @@ def tic_normalize_msicube(
     copy: bool = False,
 ) -> Optional["MSICube"]:
     """
-    Apply Total Ion Current (TIC) normalization to an ``MSICube`` intensity matrix.
+    Apply Total Ion Current (TIC) normalization to an MSICube intensity matrix.
+
+    TIC normalization rescales each spectrum (row) in the data matrix so that 
+    the sum of its intensities equals the `target_sum`. This method is widely 
+    used to compensate for pixel-to-pixel variations in total ion yield.
 
     Parameters
     ----------
     msicube : MSICube
-        The cube containing the intensity matrix to normalize. ``msicube.adata``
-        must be populated.
+        The MSICube instance containing the intensity matrix (AnnData).
     target_sum : float, default 1e6
-        After normalization, each spectrum (row) sums to ``target_sum``. Use ``1.0``
-        to obtain fractional TIC values.
-    layer : str | None, default None
-        If ``None``, normalize ``adata.X``. Otherwise, normalize ``adata.layers[layer]``.
-    store_tic_in_obs : str | None, default "tic"
-        If a string, store the pre-normalization TIC in ``adata.obs[store_tic_in_obs]``.
-        If ``None``, do not store TIC values.
+        The desired sum for each spectrum after normalization. 
+        Setting this to 1.0 results in fractional abundance values.
+    layer : str, optional
+        The specific AnnData layer to normalize. If None, normalizes ``adata.X``.
+    store_tic_in_obs : str, optional, default "tic"
+        Key used to save the original TIC values (before normalization) in 
+        ``adata.obs``. This is useful for quality control.
     copy : bool, default False
-        If ``True``, operate on and return a deep copy of the ``MSICube``. Otherwise,
-        modify in place and return ``None``.
+        If True, returns a new MSICube instance. If False, the operation 
+        is performed in-place on the original object.
 
     Returns
     -------
-    MSICube | None
-        A normalized copy if ``copy=True``, otherwise ``None``.
+    MSICube or None
+        If ``copy=True``, returns the normalized MSICube. 
+        If ``copy=False``, returns None and modifies the input in-place.
 
     Notes
     -----
-    Assumes non-negative intensities. If your data contains negatives
-    (baseline-corrected/centered), consider shifting or clipping before applying
-    TIC normalization.
+    **Mathematical Formulation**
+    For a spectrum $x = [x_1, x_2, ..., x_n]$, the TIC-normalized spectrum $x'$ 
+    is calculated as:
+    
+    $$x'_i = \frac{x_i}{\sum_{j=1}^{n} x_j} \times \text{target\_sum}$$
+
+    
+
+    **Implementation Details**
+    The function efficiently handles both dense NumPy arrays and Scipy 
+    sparse matrices. For sparse data, it uses diagonal matrix multiplication 
+    to maintain performance and memory efficiency.
+
+    **Warning**
+    This method assumes non-negative intensities. If your data has been 
+    centered or baseline-corrected in a way that introduced negative values, 
+    apply a floor (clipping) or shift before calling this function.
+
+    Examples
+    --------
+    >>> from pymsix.processing.normalization import tic_normalize_msicube
+    >>> # Normalize in-place to a target sum of 100
+    >>> tic_normalize_msicube(msicube, target_sum=100.0)
+    >>> # The original TIC values are now stored in msicube.adata.obs['tic']
+    >>> print(msicube.adata.X[0].sum())
+    100.0
     """
 
     if msicube.adata is None:

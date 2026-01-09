@@ -1,4 +1,44 @@
-# class MSICube
+"""
+MSICube Framework for Mass Spectrometry Imaging (MSI)
+=====================================================
+
+The `MSICube` class is the central orchestrator for the `pymsix` library. It 
+combines raw `imzML` data management with the `AnnData` structure to provide 
+a comprehensive analysis environment for spatial metabolomics and proteomics.
+
+Key Capabilities:
+    * **Data Integration**: Connects raw mass spectrometry files to a structured 
+        `AnnData` backend.
+    * **Preprocessing**: Normalization, log-transformation, and intensity 
+        clipping/masking.
+    * **Spectral Processing**: Generation of mean spectra (individual and global), 
+        peak picking, and intensity matrix extraction.
+    * **Spatial Analysis**: Cosine colocalization and variable aggregation 
+        by cluster or annotation labels.
+    * **Persistence**: Robust loading and saving of the analysis state 
+        using `h5ad` or `zarr` formats.
+
+
+
+The framework leverages the standard `AnnData` slots:
+    * **X**: The intensity matrix (n_pixels x n_m/z).
+    * **obs**: Metadata for pixels (coordinates, sample ID, condition).
+    * **var**: Metadata for features (m/z value, chemical annotation).
+    * **uns**: Unstructured metadata (processing options, mean spectra).
+    * **obsm**: Multidimensional pixel annotations (spatial coordinates).
+
+Classes
+-------
+Logger
+    Internal utility for standardized console output.
+MSICube
+    Primary interface for MSI data analysis and pipeline management.
+
+Functions
+---------
+_log1p_inplace_or_copy
+    Matrix-aware logarithmic transformation helper.
+"""
 
 from concurrent.futures import ProcessPoolExecutor
 import os
@@ -73,8 +113,21 @@ def _log1p_inplace_or_copy(X: Any, *, base: Optional[float] = None) -> Any:
     """
     Apply ``log1p`` to a dense or sparse matrix, mirroring Scanpy's behavior.
 
-    Sparse matrices are copied before mutation; dense inputs are modified in-place when
-    possible. If ``base`` is provided, intensities are scaled accordingly.
+    Sparse matrices are copied before mutation to maintain integrity; 
+    dense inputs are modified in-place to optimize memory usage.
+
+    Parameters
+    ----------
+    X : array_like or sparse matrix
+        The input intensity matrix.
+    base : float, optional
+        If provided, the result is scaled to this logarithmic base 
+        (e.g., base=10 for log10).
+
+    Returns
+    -------
+    X_out : same type as X
+        The transformed matrix.
     """
 
     if sp.issparse(X):
@@ -97,7 +150,18 @@ def _log1p_inplace_or_copy(X: Any, *, base: Optional[float] = None) -> Any:
 class MSICube:
     """
     Main object for Mass Spectrometry Imaging (MSI) analysis.
-    Contains an anndata object for data and a mapping of raw files.
+
+    Encapsulates the entire workflow from raw imzML files to a fully 
+    processed AnnData object.
+
+    Attributes
+    ----------
+    data_directory : str
+        Path to the directory containing raw imzML/ibd files.
+    adata : ad.AnnData or None
+        The annotated data matrix containing intensities and metadata.
+    org_imzml_path_dict : dict
+        Mapping of sample names to their corresponding file paths.
     """
 
     data_directory: str
@@ -105,9 +169,12 @@ class MSICube:
 
     def __init__(self, data_directory: str) -> None:
         """
-        Initializes the MSICube object by scanning the directory for imzML files.
+        Initializes the MSICube by scanning for available imzML files.
 
-        :param data_directory: Path to the directory containing imzML files.
+        Parameters
+        ----------
+        data_directory : str
+            Directory path to scan for datasets.
         """
         if not os.path.isdir(data_directory):
             raise FileNotFoundError(f"The directory does not exist: {data_directory}")
@@ -476,12 +543,21 @@ class MSICube:
     def compute_cosine_colocalization(
         self, *, params: CosineColocParams = CosineColocParams()
     ) -> Union[np.ndarray, sp.csr_matrix]:
-        """Compute cosine similarity between ion images stored on this cube.
+        """
+        Compute the spatial similarity (colocalization) matrix between m/z images.
 
-        This is a convenience wrapper around
-        :func:`pymsix.processing.colocalization.compute_mz_cosine_colocalization`.
-        The resulting similarity matrix is stored in ``adata.varp`` when
-        ``params.store_varp_key`` is provided.
+        This quantifies how similar the spatial distribution of two different 
+        ions is across the tissue section.
+
+        Parameters
+        ----------
+        params : CosineColocParams
+            Parameters for similarity calculation (thresholds, etc.).
+
+        Returns
+        -------
+        array_like
+            Similarity matrix of shape (n_vars, n_vars).
         """
 
         if self.adata is None:
@@ -573,11 +649,16 @@ class MSICube:
         self, mode: Literal["profile", "centroid"], **kwargs: Any
     ) -> None:
         """
-        Applies compute_mean_spectrum to all imzML files and stores the results.
+        Calculate individual mean spectra for every imzML file in the directory.
 
-        All relevant parameters (min_mz, max_mz, binning_p, tolerance_da,
-        mass_accuracy_ppm, n_sigma) must be passed via kwargs and used
-        to construct a single MeanSpectrumOptions object.
+        Results are stored in ``adata.uns['mean_spectra']``.
+
+        Parameters
+        ----------
+        mode : {"profile", "centroid"}
+            The acquisition mode of the input data.
+        **kwargs : Any
+            Parameters for binning and mass accuracy (min_mz, max_mz, binning_p).
         """
         if self.adata is None:
             self.adata = ad.AnnData()
@@ -730,11 +811,14 @@ class MSICube:
 
     def perform_peak_picking(self, **kwargs: Any) -> None:
         """
-        Performs peak picking on the global mean spectrum and stores the selected
-        mz values in adata.var.
+        Detect peaks in the global mean spectrum to define study-wide features.
 
-        The selection criteria (topn, distance_da, distance_ppm, binning_p)
-        are passed via kwargs.
+        Populates ``adata.var`` with the m/z values of the selected peaks.
+
+        Parameters
+        ----------
+        **kwargs : Any
+            Options such as `topn`, `distance_da`, or `distance_ppm`.
         """
         logger.info("Starting peak picking on the global mean spectrum.")
 

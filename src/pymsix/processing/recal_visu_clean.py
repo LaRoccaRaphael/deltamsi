@@ -1,11 +1,14 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Visual diagnostics for MSI recalibration fits.
+MSI Recalibration Diagnostics
+=============================
 
-Plots per pixel:
-1) KDE density of hit errors (Da): blue solid = before, orange dotted = after (recomputed after correction)
-2) Error vs m/z scatter + RANSAC fit line
+This module generates visual reports to validate the mass recalibration process.
+It compares experimental peaks against a reference database and visualizes
+the error distribution and the linear regression model used for correction.
+
+The diagnostics focus on two primary plots per pixel:
+1. **KDE Density**: Distribution of mass errors to identify the systematic shift.
+2. **Error vs m/z**: Scatter plot of hits and the RANSAC fit used for correction.
 """
 
 from __future__ import annotations
@@ -32,6 +35,25 @@ from pymsix.processing.recalibration_core import (
 
 
 def _parse_coord_token(tok: str) -> Tuple[int, int, int]:
+    """
+    Parse a string coordinate token into an (X, Y, Z) integer tuple.
+
+    Parameters
+    ----------
+    tok : str
+        String representing coordinates, either "x,y" or "x,y,z".
+
+    Returns
+    -------
+    Tuple[int, int, int]
+        A 3-tuple of integers (x, y, z). If z is not provided, it defaults to 1.
+
+    Raises
+    ------
+    ValueError
+        If the token does not contain 2 or 3 comma-separated parts or if parts 
+        cannot be cast to integers.
+    """
     parts = tok.split(",")
     if len(parts) not in (2, 3):
         raise ValueError(f"Bad coordinate token '{tok}'. Expected 'x,y' or 'x,y,z'.")
@@ -44,6 +66,26 @@ def _parse_coord_token(tok: str) -> Tuple[int, int, int]:
 def _coords_to_indices(
     p: ImzMLParser, coords: Sequence[Tuple[int, int, int]]
 ) -> List[int]:
+    """
+    Map physical spatial coordinates to internal spectrum indices.
+
+    Parameters
+    ----------
+    p : ImzMLParser
+        The parser object containing the `coordinates` attribute of the MSI file.
+    coords : Sequence[Tuple[int, int, int]]
+        A sequence of (x, y, z) tuples representing the targets.
+
+    Returns
+    -------
+    List[int]
+        A list of integer indices corresponding to the provided coordinates.
+
+    Raises
+    ------
+    KeyError
+        If a provided coordinate does not exist in the imzML metadata.
+    """
     coord_map = {tuple(c): i for i, c in enumerate(p.coordinates)}
     out: List[int] = []
     for c in coords:
@@ -66,6 +108,27 @@ def select_pixels(
     n_random: Optional[int] = None,
     seed: int = 0,
 ) -> Any:
+    """
+    Select a subset of pixels for diagnostic visualization.
+
+    Parameters
+    ----------
+    p : ImzMLParser
+        The parser object for the MSI dataset.
+    pixel_idx : Sequence[int], optional
+        List of specific 0-based pixel indices to plot.
+    pixel_coord : Sequence[str], optional
+        List of coordinate strings in 'x,y' or 'x,y,z' format.
+    n_random : int, optional
+        Number of random pixels to select if no specific pixels are provided.
+    seed : int, default 0
+        Random seed for reproducible pixel selection.
+
+    Returns
+    -------
+    List[int]
+        A list of validated pixel indices.
+    """
     n_total = len(p.coordinates)
 
     if pixel_idx:
@@ -93,6 +156,33 @@ def diagnostics_for_pixel(
     db_masses_sorted: np.ndarray,
     params: RecalParams,
 ) -> Any:
+    """
+    Compute recalibration statistics for a single pixel.
+
+    This function performs a "mock" recalibration: it identifies hits 
+    against the database, calculates the error mode, fits a RANSAC model, 
+    and re-calculates errors after applying the correction.
+
+    Parameters
+    ----------
+    p : ImzMLParser
+        The imzML parser.
+    idx : int
+        The internal index of the pixel to analyze.
+    db_masses_sorted : np.ndarray
+        Sorted array of reference exact masses.
+    params : RecalParams
+        Configuration object containing tolerances and KDE bandwidths.
+
+    Returns
+    -------
+    dict
+        A dictionary containing intermediate results:
+        - ``"hit_err"``: Errors before correction.
+        - ``"hit_err_corr"``: Errors after applying the model.
+        - ``"model"``: The RANSAC linear model.
+        - ``"pdf"``: The KDE density values for plotting.
+    """
     mzs, intensities = p.getspectrum(idx)
     mzs = np.asarray(mzs, dtype=float)
     intensities = np.asarray(intensities, dtype=float)
@@ -143,6 +233,28 @@ def diagnostics_for_pixel(
 
 
 def plot_diagnostics(diag: Any, params: RecalParams) -> Any:
+    """
+    Create a diagnostic figure for a pixel.
+
+    The figure consists of two panels:
+    - **Left**: KDE of mass errors. The blue line shows the uncorrected shift; 
+      the orange dotted line shows the distribution centered around zero 
+      after correction.
+    - **Right**: Error vs m/z scatter plot. Highlights the Region of Interest (ROI) 
+      and the RANSAC regression line.
+
+    Parameters
+    ----------
+    diag : dict
+        The result dictionary from `diagnostics_for_pixel`.
+    params : RecalParams
+        Recalibration parameters for drawing ROI boundaries.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated diagnostic figure.
+    """
     idx = diag["idx"]
     coord = diag["coord"]
     hit_exp = diag["hit_exp"]
@@ -220,6 +332,21 @@ def plot_diagnostics(diag: Any, params: RecalParams) -> Any:
 
 
 def build_argparser() -> argparse.ArgumentParser:
+    """
+    Construct the command-line argument parser for the processing script.
+
+    The parser includes groups for:
+    - IO (input imzML, database).
+    - Matching tolerances (Da, PPM).
+    - Statistical parameters (KDE bandwidth, ROI widths).
+    - Pixel selection (indices, coordinates, or random sampling).
+    - Output settings (PDF generation).
+
+    Returns
+    -------
+    argparse.ArgumentParser
+        The fully configured argument parser.
+    """
     ap = argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("-i", "--imzml", required=True, help="Path to input imzML")
     ap.add_argument(
@@ -283,6 +410,17 @@ def build_argparser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """
+    Command-line interface for generating recalibration PDF reports.
+
+    Examples
+    --------
+    Generate random diagnostics and show them interactively:
+    $ python diagnostics.py -i data.imzML -db references.csv --n-random 3
+
+    Save diagnostics for specific coordinates to a PDF:
+    $ python diagnostics.py -i data.imzML -db ref.csv --pixel-coord "10,10" "20,30" --outpdf report.pdf
+    """
     args = build_argparser().parse_args()
 
     params = RecalParams(

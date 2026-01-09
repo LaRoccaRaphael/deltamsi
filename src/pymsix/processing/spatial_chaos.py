@@ -1,3 +1,38 @@
+"""
+Spatial Chaos Analysis Module
+=============================
+
+This module provides tools to quantify and compare spatial structure in 
+Mass Spectrometry Imaging (MSI) data through spatial chaos scores. It is 
+designed to work with ``AnnData`` objects and raw NumPy arrays.
+
+The core metric, the Spatial Chaos Score ($S$), measures the fragmentation 
+of an ion image across multiple intensity thresholds. A score of 1 
+represents a perfectly structured image (single cluster), while 0 
+represents total spatial randomness (high fragmentation).
+
+Functions
+---------
+spatial_chaos_score
+    Computes the chaos score for a single 2D ion image.
+spatial_chaos_fold_change
+    Computes structure-based fold change between two experimental groups.
+compute_spatial_chaos_matrix
+    Calculates chaos scores for all ions and samples in an AnnData object.
+spatial_chaos_fold_change_from_adata
+    Wrapper to compute fold change directly from stored AnnData metadata.
+
+Examples
+--------
+>>> import numpy as np
+>>> # Generate a dummy structured image (a central square)
+>>> img = np.zeros((10, 10))
+>>> img[3:7, 3:7] = 1.0
+>>> score = spatial_chaos_score(img)
+>>> print(f"Chaos score: {score:.2f}")
+Chaos score: 0.94
+"""
+
 import numpy as np
 import pandas as pd
 import anndata as ad
@@ -14,31 +49,36 @@ def spatial_chaos_fold_change(
     eps: float = 1e-6,
 ) -> Dict[str, np.ndarray]:
     """
-    Compute structure-based fold change FC_S(m) from spatial chaos scores.
+    Compute structure-based fold change $FC_S(m)$ from spatial chaos scores.
 
     Parameters
     ----------
-    chaos_scores : ndarray, shape (n_mz, n_samples)
-        Spatial chaos scores for each ion (rows) and sample (columns).
-    sample_groups : sequence of length n_samples
-        Group label for each sample (e.g. "control", "interaction").
+    chaos_scores : np.ndarray
+        2D array of shape ``(n_mz, n_samples)`` containing spatial chaos scores.
+    sample_groups : Sequence
+        Sequence of length ``n_samples`` assigning a group label to each column.
     control_label : Any
-        Label in ``sample_groups`` corresponding to the control group.
+        The label identifying the control group in ``sample_groups``.
     interaction_label : Any
-        Label in ``sample_groups`` corresponding to the interaction/condition group.
+        The label identifying the treated/interaction group in ``sample_groups``.
     eps : float, default 1e-6
-        Small constant added as a floor to ``S_control_max`` in the denominator to
-        avoid division by zero when control scores are ~0.
+        Small constant to avoid division by zero if the control score is 0.
 
     Returns
     -------
-    result : dict
-        - "S_control_max": 1D ndarray, shape (n_mz,)
-              ``S_control_max(m) = max_{s in control} S_{control,s}(m)``
-        - "S_interaction_max": 1D ndarray, shape (n_mz,)
-              ``S_interaction_max(m) = max_{s in interaction} S_{interaction,s}(m)``
-        - "FC_S": 1D ndarray, shape (n_mz,)
-              ``FC_S(m) = S_interaction_max(m) / max(S_control_max(m), eps)``
+    Dict[str, np.ndarray]
+        A dictionary containing:
+        - ``"S_control_max"``: Max chaos score per m/z in control group.
+        - ``"S_interaction_max"``: Max chaos score per m/z in interaction group.
+        - ``"FC_S"``: The spatial fold change ratio.
+
+    Examples
+    --------
+    >>> scores = np.array([[0.8, 0.9, 0.1, 0.2], [0.5, 0.5, 0.6, 0.7]])
+    >>> groups = ["interaction", "interaction", "control", "control"]
+    >>> res = spatial_chaos_fold_change(scores, groups, "control", "interaction")
+    >>> res["FC_S"]
+    array([4.5, 0.71428571])
     """
 
     chaos_scores = np.asarray(chaos_scores, dtype=float)
@@ -79,48 +119,30 @@ def spatial_chaos_score(
     n_thresholds: int = 30,
 ) -> float:
     """
-    Spatial chaos score :math:`S` as defined in Section 2.3.1 of Chapter 2.
+    Compute the Spatial Chaos Score $S$ for a 2D ion image.
 
-    The score is computed as follows:
-
-    #. Normalize the ion image to the interval ``[0, 1]`` using its maximum intensity.
-    #. Define :math:`N` thresholds :math:`t_k` evenly spaced in the interval ``(0, 1)``.
-    #. For each threshold:
-
-    * Compute the binary image :math:`B_k(x, y)` defined as:
-
-        .. math::
-
-            B_k(x, y) =
-            \\begin{cases}
-            1 & \\text{if } I_{norm}(x, y) \\ge t_k \\\\
-            0 & \\text{otherwise}
-            \\end{cases}
-
-    * Let :math:`C_k` be the number of clusters
-        (4-connectivity) in :math:`B_k`.
-    * Let :math:`P_k` be the number of positive pixels in :math:`B_k`.
-
-    #. Compute :math:`C_{tot} = \\sum_k C_k` and :math:`P_{tot} = \\sum_k P_k`.
-    #. Compute the final score:
-
-    .. math::
-
-        S = 1 - \\frac{C_{tot}}{P_{tot}}, \\qquad 0 \\le S \\le 1
+    The score is based on the ratio of the number of connected components 
+    (clusters) to the number of positive pixels across multiple intensity 
+    thresholds.
 
     Parameters
     ----------
-    image : 2D ndarray
-        Ion image with non-negative intensities.
-
+    image : np.ndarray
+        2D array of non-negative intensities (ion image).
     n_thresholds : int, default 30
-        Number of thresholds :math:`N`.
+        Number of intensity levels $N$ used to binarize the image.
 
     Returns
     -------
-    S : float
-        Spatial chaos score in the interval ``[0, 1]``.
-        Returns ``numpy.nan`` if the image contains no positive intensities.
+    float
+        The chaos score in $[0, 1]$. Returns ``np.nan`` if the image is empty.
+
+    Notes
+    -----
+    The score is calculated as:
+    $$S = 1 - \\frac{\\sum_{k=1}^{N} C_k}{\\sum_{k=1}^{N} P_k}$$
+    where $C_k$ is the number of 4-connected clusters and $P_k$ is the number 
+    of positive pixels at threshold $k$.
     """
 
     im = np.asarray(image, dtype=float)
@@ -182,6 +204,45 @@ def spatial_chaos_score(
 
 
 def _get_data_matrix(adata: ad.AnnData, layer: Optional[str]) -> Any:
+    """
+    Extract the main data matrix (X) or a specific layer from an AnnData object.
+
+    This helper ensures that the requested data exists and provides clear 
+    error messages if the slots are empty or missing.
+
+    Parameters
+    ----------
+    adata : ad.AnnData
+        The annotated data object from which to extract the matrix.
+    layer : str, optional
+        The name of the layer to retrieve. If None, the function attempts 
+        to return ``adata.X``.
+
+    Returns
+    -------
+    Any
+        The data matrix, typically a ``numpy.ndarray`` or a ``scipy.sparse`` 
+        matrix.
+
+    Raises
+    ------
+    ValueError
+        If `layer` is None and ``adata.X`` is also None.
+    KeyError
+        If a specific `layer` string is provided but does not exist in 
+        ``adata.layers``.
+
+    Examples
+    --------
+    >>> import anndata as ad
+    >>> import numpy as np
+    >>> adata = ad.AnnData(np.ones((3, 2)))
+    >>> # Extract the main matrix X
+    >>> X = _get_data_matrix(adata, layer=None)
+    >>> # Extract a specific layer
+    >>> adata.layers["raw"] = np.zeros((3, 2))
+    >>> raw_layer = _get_data_matrix(adata, layer="raw")
+    """
     if layer is None:
         if adata.X is None:
             raise ValueError("AnnData.X is empty; provide a valid layer instead.")
@@ -201,10 +262,27 @@ def compute_spatial_chaos_matrix(
     n_thresholds: int = 30,
 ) -> Tuple[np.ndarray, List[str]]:
     """
-    Compute spatial chaos scores for every variable (ion) and every MSI sample.
+    Compute spatial chaos scores for every variable (ion) and MSI sample in an AnnData.
 
-    The output matrix has shape ``(n_vars, n_samples)`` where columns follow the
-    order of unique ``adata.obs[sample_key]`` values.
+    Parameters
+    ----------
+    adata : ad.AnnData
+        Annotated data object.
+    layer : str, optional
+        Layer to use for intensities. If None, uses ``adata.X``.
+    obsm_key : str, default "spatial"
+        Key in ``adata.obsm`` containing spatial coordinates (X, Y).
+    sample_key : str, default "sample"
+        Column in ``adata.obs`` identifying unique MSI samples/images.
+    n_thresholds : int, default 30
+        Precision of the chaos score calculation.
+
+    Returns
+    -------
+    chaos : np.ndarray
+        Matrix of shape ``(n_vars, n_samples)`` with chaos scores.
+    samples : List[str]
+        List of sample names corresponding to the columns of the matrix.
     """
     if sample_key not in adata.obs:
         raise KeyError(f"Column '{sample_key}' not found in AnnData.obs")
@@ -265,30 +343,28 @@ def spatial_chaos_fold_change_from_adata(
     eps: float = 1e-6,
 ) -> Dict[str, np.ndarray]:
     """
-    Compute spatial chaos fold change using chaos scores stored in ``adata.varm``.
+    Compute spatial chaos fold change using scores stored in ``adata.varm``.
 
     Parameters
     ----------
-    adata : AnnData
-        Annotated data matrix containing spatial chaos scores in ``adata.varm``.
+    adata : ad.AnnData
+        Annotated data matrix.
     groupby : str
-        ``adata.obs`` column with MSI labels/conditions for each pixel. Values are
-        expected to be constant within a sample.
+        The column in ``adata.obs`` that defines the experimental group 
+        (e.g., 'condition').
     control_label : Any
-        Label corresponding to the control group.
+        The name of the control group.
     interaction_label : Any
-        Label corresponding to the interaction/condition group.
+        The name of the condition group.
     varm_key : str, default "spatial_chaos"
-        Key in ``adata.varm`` holding the chaos score matrix produced by
-        :func:`compute_spatial_chaos_matrix` or
-        :meth:`pymsix.core.msicube.MSICube.compute_spatial_chaos_scores`.
+        The key in ``adata.varm`` where the chaos score matrix is stored.
     eps : float, default 1e-6
-        Numerical floor applied to the control denominator.
+        Numerical floor for denominator.
 
     Returns
     -------
     Dict[str, np.ndarray]
-        Dictionary with the same keys as :func:`spatial_chaos_fold_change`.
+        Dictionary with FC results and sample group mapping.
     """
 
     if varm_key not in adata.varm:

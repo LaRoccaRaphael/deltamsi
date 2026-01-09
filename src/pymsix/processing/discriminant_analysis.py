@@ -1,7 +1,17 @@
-"""Discriminant analysis utilities for MSI AnnData objects.
+"""
+Discriminant Analysis and Marker Discovery
+==========================================
 
-The main entry point is :func:`rank_ions_groups_msi`, which mirrors Scanpy-style
-marker discovery while working directly on an MSI-formatted ``AnnData``.
+This module implements statistical methods to identify ions that significantly 
+differ between groups of pixels or samples. It provides a Scanpy-like interface 
+specifically optimized for Mass Spectrometry Imaging (MSI).
+
+The analysis automatically adapts to your experimental design:
+* **Single Sample**: Uses pixel-level effect sizes with optional spatial block bootstrapping.
+* **Replicated Design**: Uses a pseudobulk-per-sample approach with statistical testing 
+  (t-test or Wilcoxon) and FDR correction.
+
+
 """
 
 from __future__ import annotations
@@ -22,22 +32,76 @@ __all__ = ["RankIonsMSIParams", "rank_ions_groups_msi"]
 # Helpers
 # ---------------------------
 def _get_X(adata: ad.AnnData, layer: Optional[str]):
+    """
+    Extract the relevant data matrix from an AnnData object.
+
+    Parameters
+    ----------
+    adata : ad.AnnData
+        Annotated data object.
+    layer : str, optional
+        Name of the layer to extract. If None, returns ``adata.X``.
+
+    Returns
+    -------
+    Union[np.ndarray, sp.spmatrix]
+        The requested data matrix.
+    """
     return adata.layers[layer] if layer is not None else adata.X
 
 
 def _mean_axis0(X) -> np.ndarray:
-    # returns 1D array (n_vars,)
+    """
+    Compute the mean along axis 0 (column-wise).
+
+    Parameters
+    ----------
+    X : array_like or sparse matrix
+        Input data matrix of shape (n_observations, n_variables).
+
+    Returns
+    -------
+    np.ndarray
+        1D array of shape (n_variables,) containing the means.
+    """
     if sp.issparse(X):
         return np.asarray(X.mean(axis=0)).ravel()
     return np.asarray(X.mean(axis=0)).ravel()
 
 
 def _median_axis0_dense(X: np.ndarray) -> np.ndarray:
+    """
+    Compute the median along axis 0 for a dense array.
+
+    Parameters
+    ----------
+    X : np.ndarray
+        Dense input matrix.
+
+    Returns
+    -------
+    np.ndarray
+        1D array of shape (n_variables,) containing the medians.
+    """
     return np.median(X, axis=0)
 
 
 def _pct_detected(X, *, threshold: float = 0.0) -> np.ndarray:
-    """Fraction of observations with value > threshold for each variable."""
+    """
+    Calculate the fraction of observations above a threshold for each variable.
+
+    Parameters
+    ----------
+    X : array_like or sparse matrix
+        Input data matrix.
+    threshold : float, default 0.0
+        The value above which a variable is considered "detected".
+
+    Returns
+    -------
+    np.ndarray
+        1D array of shape (n_variables,) with values in range [0, 1].
+    """
     n = X.shape[0]
     if n == 0:
         return np.zeros(X.shape[1], dtype=float)
@@ -53,7 +117,25 @@ def _pct_detected(X, *, threshold: float = 0.0) -> np.ndarray:
 
 
 def _bh_fdr(p: np.ndarray) -> np.ndarray:
-    """Benjamini–Hochberg FDR adjustment. ``p`` can contain NaNs."""
+    """
+    Apply Benjamini–Hochberg False Discovery Rate (FDR) adjustment.
+
+    Parameters
+    ----------
+    p : np.ndarray
+        1D array of p-values. Can contain ``np.nan`` values which will be ignored.
+
+    Returns
+    -------
+    np.ndarray
+        Adjusted p-values (q-values) of the same shape as input.
+
+    Examples
+    --------
+    >>> pvals = np.array([0.01, 0.05, 0.5, np.nan])
+    >>> _bh_fdr(pvals)
+    array([0.04, 0.1 , 0.5 ,  nan])
+    """
     p = np.asarray(p, dtype=float)
     out = np.full_like(p, np.nan, dtype=float)
     m = np.isfinite(p)
@@ -73,6 +155,24 @@ def _bh_fdr(p: np.ndarray) -> np.ndarray:
 
 
 def _log2fc(a: np.ndarray, b: np.ndarray, pseudocount: float) -> np.ndarray:
+    """
+    Compute the Log2 Fold Change between two arrays.
+
+    Parameters
+    ----------
+    a : np.ndarray
+        Numerator array (e.g., condition intensities).
+    b : np.ndarray
+        Denominator array (e.g., control intensities).
+    pseudocount : float
+        A value added to both numerator and denominator to prevent 
+        division by zero and stabilize variance.
+
+    Returns
+    -------
+    np.ndarray
+        Calculated Log2 Fold Change.
+    """
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
     return np.log2((a + pseudocount) / (b + pseudocount))
@@ -87,7 +187,37 @@ def _infer_blocks(
     y_key: str,
     spatial_key: str,
 ) -> np.ndarray:
-    """Return block id per obs index using integer pixel coordinates."""
+    """
+    Partition spatial observations into discrete block IDs.
+
+    This function calculates which rectangular tile (block) each pixel belongs to 
+    based on its spatial coordinates and a fixed block size.
+
+    Parameters
+    ----------
+    adata : ad.AnnData
+        The annotated data object.
+    obs_idx : np.ndarray
+        The indices of the observations to process.
+    block_size : int
+        The width/height of the square blocks in pixel units.
+    x_key : str
+        Column name for X coordinates in ``adata.obs``.
+    y_key : str
+        Column name for Y coordinates in ``adata.obs``.
+    spatial_key : str
+        Key name for coordinates in ``adata.obsm``. Only used if x_key/y_key 
+        are not in ``adata.obs``.
+
+    Returns
+    -------
+    np.ndarray
+        1D array of integer block IDs.
+
+    Notes
+    -----
+    The coordinates are normalized to start at 0 before block assignment.
+    """
 
     if x_key in adata.obs.columns and y_key in adata.obs.columns:
         x = np.asarray(adata.obs.loc[adata.obs.index[obs_idx], x_key], dtype=int)
@@ -114,6 +244,43 @@ def _infer_blocks(
 # ---------------------------
 @dataclass
 class RankIonsMSIParams:
+    """
+    Parameters for the ranking of ions between groups.
+
+    Attributes
+    ----------
+    condition_key : str, default "condition"
+        Column in ``adata.obs`` containing the experimental groups/conditions.
+    sample_key : str, default "sample"
+        Column in ``adata.obs`` identifying individual biological replicates.
+    group : str, default "treated"
+        The name of the condition to test (the "numerator").
+    reference : str, default "control"
+        The name of the condition to use as a baseline (the "denominator").
+    layer : str, optional
+        The AnnData layer to use for intensity values. If None, uses ``adata.X``.
+    detection_threshold : float, default 0.0
+        Intensity value above which an ion is considered "detected".
+    pseudocount : float, default 1e-9
+        Constant added to denominators to avoid division by zero in log2FC.
+    agg : {"mean", "median"}, default "mean"
+        Method to summarize pixels into sample-level pseudobulk values.
+    method : {"auto", "ttest", "wilcoxon"}, default "auto"
+        Statistical test to perform when replicates are available.
+    direction : {"up", "abs"}, default "up"
+        "up" focuses on ions overexpressed in `group`. "abs" ranks by absolute fold change.
+    n_top : int, default 200
+        Number of top ions to return in the summary table.
+    compute_auc : bool, default True
+        Whether to calculate the Area Under the Curve (Receiver Operating Characteristic).
+    block_bootstrap : bool, default False
+        Whether to use spatial block bootstrapping to estimate confidence 
+        intervals for single-sample comparisons.
+    block_size : int, default 25
+        Side length of the square spatial blocks (in pixels) for bootstrapping.
+    key_added : str, default "rank_ions_groups_msi"
+        Key under which results are stored in ``adata.uns``.
+    """
     condition_key: str = "condition"
     sample_key: str = "sample"
     group: str = "treated"  # user-selected
@@ -155,12 +322,55 @@ class RankIonsMSIParams:
 
 
 def rank_ions_groups_msi(adata: ad.AnnData, *, params: RankIonsMSIParams) -> pd.DataFrame:
-    """Scanpy-style marker discovery for MSI (ions in adata.var, pixels in adata.obs).
+    """
+    Rank ions by differential expression between two groups of MSI data.
 
-    The function ranks ions between a user-defined group and reference and stores the
-    results under ``adata.uns[params.key_added]``. Ranking is based on pixel-level
-    summaries for single-sample comparisons and pseudobulk-per-sample statistics when
-    replicates are available.
+    This function identifies marker ions by comparing a group condition against 
+    a reference condition. It computes effect sizes (Log2 Fold Change, 
+    Delta Detection Rate) and, if replicates are present, statistical 
+    significance (p-values).
+
+    Parameters
+    ----------
+    adata : ad.AnnData
+        The annotated data matrix (pixels x ions).
+    params : RankIonsMSIParams
+        Configuration object specifying groups, stats, and output keys.
+
+    Returns
+    -------
+    res_top : pd.DataFrame
+        A table of the top `n_top` ranked ions with their associated statistics 
+        (log2fc, pvals, AUC, etc.).
+
+    Notes
+    -----
+    **Spatial Block Bootstrap**
+    In MSI, pixels are not independent observations. If you have only one 
+    sample per group, standard p-values are often artificially low. Enabling 
+    `block_bootstrap` resamples square tiles of pixels to provide a more 
+    realistic Confidence Interval (CI) for the Fold Change.
+
+    
+
+    **Storage**
+    Results are saved in ``adata.uns[params.key_added]`` in a format 
+    compatible with common visualization tools, including the ranking 
+    scores and full statistical tables.
+
+    Examples
+    --------
+    >>> from pymsix.processing.discriminant import rank_ions_groups_msi, RankIonsMSIParams
+    >>> # Define comparison between Treated and Control
+    >>> p = RankIonsMSIParams(
+    ...     condition_key="group", 
+    ...     group="Treated", 
+    ...     reference="Control",
+    ...     method="ttest"
+    ... )
+    >>> # Run analysis
+    >>> top_ions = rank_ions_groups_msi(adata, params=p)
+    >>> print(top_ions.head())
     """
 
     ck = params.condition_key

@@ -1,4 +1,15 @@
-"""Aggregation utilities for MSI cubes."""
+"""
+MSI Data Aggregation Utilities
+==============================
+
+This module provides tools for grouping and summarizing variables (m/z channels) 
+within an MSI dataset. It is primarily used to collapse redundant features 
+or to create "component images" based on clustering or decomposition labels.
+
+The main function allows for spatial intensity matrices to be aggregated by 
+metadata labels, facilitating downstream visualization of molecular families 
+or co-localized ions.
+"""
 
 from __future__ import annotations
 
@@ -27,47 +38,81 @@ def aggregate_vars_by_label(
     dtype: Union[np.dtype, type] = np.float32,
 ) -> pd.Index:
     """
-    Aggregate variables (m/z columns) that share the same label in ``adata.var[label_col]``.
+    Aggregate variables (m/z columns) that share the same label in metadata.
 
-    The aggregated ion images are stored in ``adata.obsm[obsm_key]`` with shape
-    ``(n_obs, n_labels)``. Label names (column order) are stored in
-    ``adata.uns[f"{obsm_key}_labels"]``.
+    This function groups m/z channels based on a column in ``adata.var`` 
+    and computes a summary statistic (mean, median, or max) for each group. 
+    The resulting matrix represents aggregated ion distributions (images) 
+    stored in the ``obsm`` slot of the AnnData object.
 
     Parameters
     ----------
     msicube : MSICube
-        The cube containing the AnnData object to aggregate.
+        The MSICube instance containing the MSI data to aggregate.
     label_col : str
-        Column in ``adata.var`` containing the labels used to group variables.
-    layer : str | None, default None
-        If provided, aggregate ``adata.layers[layer]`` instead of ``adata.X``.
+        Column name in ``adata.var`` containing labels used for grouping 
+        (e.g., "cluster_id", "chemical_family").
+    layer : str, optional
+        If provided, aggregates values from ``adata.layers[layer]`` instead 
+        of the main data matrix ``adata.X``.
     agg : {"mean", "median", "max"}, default "mean"
-        Aggregation strategy applied across variables within a label.
+        The aggregation strategy to apply across the variables of each group.
+        Note: "median" is not supported for sparse matrices.
     obsm_key : str, default "X_by_label"
-        Key under which the aggregated matrix is stored in ``adata.obsm``.
+        Key under which the aggregated matrix will be stored in ``adata.obsm``.
     dropna : bool, default True
-        Whether to drop variables with missing labels. If ``False``, missing labels are
-        replaced with "NA".
+        If True, variables with NaN in `label_col` are ignored. If False, 
+        they are grouped under the label "NA".
     keep_order : bool, default True
-        Preserve the first-seen order of labels instead of sorting them.
+        If True, the columns in the output matrix follow the order in which 
+        labels first appear in ``adata.var``. If False, labels are sorted 
+        alphabetically.
     as_df : bool, default False
-        Store the aggregated matrix as a pandas DataFrame rather than a NumPy array.
+        If True, stores a ``pandas.DataFrame`` in ``obsm``; otherwise, 
+        stores a ``numpy.ndarray``.
     dtype : dtype or type, default numpy.float32
-        Data type of the aggregated matrix.
+        The numerical precision of the resulting aggregated matrix.
 
     Returns
     -------
-    pandas.Index
-        Index of the aggregated label names, named after ``label_col``.
+    pd.Index
+        An index containing the unique labels in the order they appear in 
+        the aggregated matrix.
 
     Raises
     ------
     ValueError
-        If ``msicube.adata`` is missing.
+        If ``msicube.adata`` is None, if an unknown aggregation method is 
+        provided, or if "median" is requested for sparse data.
     KeyError
-        If ``label_col`` is not present in ``adata.var`` or ``layer`` is not found.
-    ValueError
-        If ``agg='median'`` is used with a sparse matrix.
+        If `label_col` is not found in ``adata.var`` or if the specified 
+        `layer` is missing.
+
+    Notes
+    -----
+    Aggregation is a key step after mass clustering. By computing the 
+    average intensity of all ions within a cluster, you obtain a single 
+    spatial distribution that represents the entire molecular family.
+
+    
+
+    The result is stored in ``adata.obsm[obsm_key]`` with a shape 
+    of ``(n_pixels, n_unique_labels)``. Metadata about the process is 
+    stored in ``adata.uns[f"{obsm_key}_source"]``.
+
+    Examples
+    --------
+    >>> from pymsix.processing.aggregation import aggregate_vars_by_label
+    >>> # Aggregate ions by their cluster ID to get cluster-specific images
+    >>> labels = aggregate_vars_by_label(
+    ...     msicube, 
+    ...     label_col="cluster", 
+    ...     agg="max"
+    ... )
+    >>> print(f"Aggregated into {len(labels)} unique groups")
+    
+    >>> # Access the resulting matrix
+    >>> cluster_images = msicube.adata.obsm["X_by_label"]
     """
 
     if msicube.adata is None:

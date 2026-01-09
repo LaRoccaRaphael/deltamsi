@@ -541,7 +541,7 @@ class KendrickPlotOptions:
     dpi: int = 140
 
     def validate(self) -> None:
-        """Valide la cohérence des options de plot."""
+        """Validates the coherence of the options."""
         if self.x_axis not in ["kendrick_mass", "m_over_z"]:
             raise ValueError(f"x_axis invalide: {self.x_axis}")
         if self.kmd_mode not in ["fraction", "defect"]:

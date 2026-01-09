@@ -1,8 +1,11 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Recalibration core utilities for centroid MSI spectra.
+Recalibration Core Utilities
+============================
 
+This module implements the mathematical logic for pixel-wise recalibration.
+The workflow relies on finding "hits" (matches) in a reference database, 
+using Kernel Density Estimation (KDE) to find the most probable mass error 
+(mode), and applying RANSAC regression to model the error across the m/z range.
 """
 
 from __future__ import annotations
@@ -16,6 +19,24 @@ from scipy.stats import gaussian_kde
 
 @dataclass(frozen=True)
 class RecalParams:
+    """
+    Parameter container for recalibration logic.
+
+    Attributes
+    ----------
+    tol_da : float
+        Search tolerance in Daltons.
+    tol_ppm : float, optional
+        Search tolerance in ppm. If set, it overrides `tol_da`.
+    kde_bw_da : float
+        Bandwidth for the KDE (smoothing factor).
+    roi_halfwidth_da : float
+        The window size around the detected mode to keep hits for RANSAC.
+    n_peaks : int
+        Number of highest-intensity peaks to consider per pixel.
+    min_hits_for_fit : int
+        Minimum number of database matches required to attempt a fit.
+    """
     # Matching tolerance (choose one)
     tol_da: float = 0.03  # used if tol_ppm is None
     tol_ppm: Optional[float] = None  # if set, per-peak tol_da = mz * tol_ppm * 1e-6
@@ -33,7 +54,19 @@ class RecalParams:
 
 
 def load_database_masses(path: str) -> np.ndarray:
-    """Load a calibrant/exact-mass list from text/CSV-like file (1 column)."""
+    """
+    Load exact masses from a text or CSV file.
+
+    Parameters
+    ----------
+    path : str
+        Path to the file containing one exact mass per line.
+
+    Returns
+    -------
+    np.ndarray
+        Sorted, unique array of finite mass values.
+    """
     masses = np.genfromtxt(path, dtype=float)
     masses = np.asarray(masses, dtype=float).ravel()
     masses = masses[np.isfinite(masses)]
@@ -45,7 +78,30 @@ def load_database_masses(path: str) -> np.ndarray:
 def select_top_peaks(
     mzs: np.ndarray, intensities: np.ndarray, n_peaks: int
 ) -> np.ndarray:
-    """Return m/z values of the top-N peaks by intensity (descending)."""
+    """
+    Select the N most intense peaks from a spectrum.
+
+    Parameters
+    ----------
+    mzs : np.ndarray
+        Experimental m/z values.
+    intensities : np.ndarray
+        Experimental intensity values.
+    n_peaks : int
+        Number of peaks to return.
+
+    Returns
+    -------
+    np.ndarray
+        m/z values of the top-N peaks.
+        
+    Examples
+    --------
+    >>> mzs = np.array([100.1, 100.2, 100.3])
+    >>> ints = np.array([10, 500, 20])
+    >>> select_top_peaks(mzs, ints, n_peaks=1)
+    array([100.2])
+    """
     mzs = np.asarray(mzs, dtype=float)
     intensities = np.asarray(intensities, dtype=float)
     if n_peaks <= 0:
@@ -59,14 +115,49 @@ def select_top_peaks(
 
 
 def tol_da_for_peak(exp_mz: float, *, tol_da: float, tol_ppm: Optional[float]) -> float:
-    """Return the matching tolerance in Da for this exp_mz."""
+    """
+    Return the matching tolerance in Dalton (Da) for a specific m/z.
+
+    Parameters
+    ----------
+    exp_mz : float
+        The experimental m/z value.
+    tol_da : float
+        The absolute tolerance in Dalton (fallback if tol_ppm is None).
+    tol_ppm : float, optional
+        The relative tolerance in parts-per-million. If provided, overrides tol_da.
+
+    Returns
+    -------
+    float
+        The tolerance converted to absolute Dalton.
+    """
     if tol_ppm is None:
         return float(tol_da)
     return float(exp_mz) * float(tol_ppm) * 1e-6
 
 
 def _db_hits_indices(sorted_db: np.ndarray, x: float, tol_da: float) -> np.ndarray:
-    """Indices in sorted_db within [x-tol, x+tol] using binary search (searchsorted)."""
+    """
+    Find indices in a sorted database within a mass window [x-tol, x+tol].
+
+    Uses binary search (`np.searchsorted`) to achieve logarithmic time complexity,
+    which is essential for searching large mass databases.
+
+    Parameters
+    ----------
+    sorted_db : np.ndarray
+        1D array of exact masses, must be sorted in ascending order.
+    x : float
+        The target m/z value to search for.
+    tol_da : float
+        The search window radius in Dalton.
+
+    Returns
+    -------
+    np.ndarray
+        Array of indices into `sorted_db` that fall within the window.
+    """
     left = np.searchsorted(sorted_db, x - tol_da, side="left")
     right = np.searchsorted(sorted_db, x + tol_da, side="right")
     if right <= left:
@@ -82,8 +173,25 @@ def generate_hits(
     tol_ppm: Optional[float],
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    For each experimental peak, find all database masses within tolerance
-    and return (hit_exp_mz, hit_errors_da).
+    Match experimental peaks against a database within a given tolerance.
+
+    Parameters
+    ----------
+    peaks_mz : np.ndarray
+        Experimental peaks.
+    database_exactmass_sorted : np.ndarray
+        Sorted reference masses.
+    tol_da : float
+        Search window in Da.
+    tol_ppm : float, optional
+        Search window in ppm.
+
+    Returns
+    -------
+    hit_exp : np.ndarray
+        The experimental m/z for every match found.
+    hit_err : np.ndarray
+        The mass error (Experimental - Theoretical) in Da.
     """
     db = np.asarray(database_exactmass_sorted, dtype=float)
     hit_exp = []
@@ -105,7 +213,28 @@ def generate_hits(
 
 
 def kde_pdf(x: np.ndarray, x_grid: np.ndarray, bandwidth: float) -> np.ndarray:
-    """KDE on x evaluated on x_grid (bandwidth in Da)."""
+    """
+    Perform Kernel Density Estimation (KDE) on x evaluated on x_grid.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        1D array of observed values (e.g., mass errors).
+    x_grid : np.ndarray
+        1D array of points where the density is evaluated.
+    bandwidth : float
+        The smoothing bandwidth in Dalton.
+
+    Returns
+    -------
+    np.ndarray
+        The estimated density profile across the grid.
+
+    Notes
+    -----
+    The function handles edge cases where the standard deviation is zero 
+    by placing a single peak at the mean.
+    """
     x = np.asarray(x, dtype=float)
     if x.size < 2:
         return np.zeros_like(x_grid, dtype=float)
@@ -121,9 +250,22 @@ def kde_pdf(x: np.ndarray, x_grid: np.ndarray, bandwidth: float) -> np.ndarray:
 
 def kde_grid_halfwidth_da(peaks_mz: np.ndarray, params: RecalParams) -> float:
     """
-    KDE grid halfwidth (Da) used for density plot.
-    - If tol_ppm is set, take tolerance at max(mz).
-    - Else use tol_da.
+    Calculate the KDE grid halfwidth (Da) based on mass accuracy parameters.
+
+    If PPM tolerance is used, the width scales with the maximum m/z in the sample.
+    Otherwise, the constant Dalton tolerance is used.
+
+    Parameters
+    ----------
+    peaks_mz : np.ndarray
+        1D array of m/z values found in the pixel/sample.
+    params : RecalParams
+        An object containing `tol_da` and `tol_ppm` attributes.
+
+    Returns
+    -------
+    float
+        The grid halfwidth in Dalton.
     """
     if params.tol_ppm is None:
         return float(params.tol_da)
@@ -140,7 +282,29 @@ def estimate_error_mode(
     kde_bw_da: float,
     grid_step_da: float,
 ) -> Tuple[float, np.ndarray, np.ndarray]:
-    """Estimate error mode via KDE. Returns (mode, x_grid, pdf)."""
+    """
+    Find the most frequent mass error using Kernel Density Estimation.
+
+    This identifies the systematic shift of the instrument.
+
+    Parameters
+    ----------
+    hit_errors : np.ndarray
+        Array of errors from `generate_hits`.
+    grid_halfwidth_da : float
+        Range of the error search (e.g., 0.05 Da).
+    kde_bw_da : float
+        KDE bandwidth.
+
+    Returns
+    -------
+    mode : float
+        The m/z value where the error density is highest.
+    x_grid : np.ndarray
+        The m/z error values evaluated.
+    pdf : np.ndarray
+        The density values at each grid point.
+    """
     hw = float(grid_halfwidth_da)
     step = float(grid_step_da)
     if hw <= 0 or step <= 0:
@@ -158,7 +322,26 @@ def estimate_error_mode(
 def select_hits_roi(
     hit_errors: np.ndarray, *, mode: float, roi_halfwidth_da: float
 ) -> np.ndarray:
-    """Mask selecting hits within [mode - roi_halfwidth, mode + roi_halfwidth]."""
+    """
+    Create a mask to filter hits within a specific Region of Interest (ROI).
+
+    Typically used to isolate the most frequent mass error (mode) from 
+    random background matches.
+
+    Parameters
+    ----------
+    hit_errors : np.ndarray
+        1D array of mass errors (observed - theoretical).
+    mode : float
+        The target error center (often the peak of the KDE density).
+    roi_halfwidth_da : float
+        The radius around the mode to include in the mask.
+
+    Returns
+    -------
+    np.ndarray
+        Boolean array where True represents a hit within the ROI.
+    """
     x = np.asarray(hit_errors, dtype=float)
     return (x >= mode - float(roi_halfwidth_da)) & (x <= mode + float(roi_halfwidth_da))
 
@@ -169,7 +352,28 @@ def fit_ransac_linear_model(
     roi_mask: np.ndarray,
     params: RecalParams,
 ) -> Any:
-    """Fit error = a*mz + b on ROI hits using RANSAC. Returns model or None."""
+    """
+    Fit a robust linear regression to the mass errors.
+
+    Uses RANSAC to ignore "false hits" (random matches) and focus on 
+    the true population of calibrated ions.
+
+    Parameters
+    ----------
+    hit_exp_mz : np.ndarray
+        Experimental m/z of hits.
+    hit_errors_da : np.ndarray
+        Errors of hits.
+    roi_mask : np.ndarray
+        Boolean mask of hits lying within the expected error region.
+    params : RecalParams
+        Parameters for RANSAC trials and sample sizes.
+
+    Returns
+    -------
+    model : sklearn.linear_model.RANSACRegressor or None
+        The fitted model, or None if insufficient hits were found.
+    """
 
     from sklearn import linear_model
 
@@ -198,7 +402,25 @@ def fit_ransac_linear_model(
 
 
 def correct_mz_with_model(mzs: np.ndarray, model: Any) -> np.ndarray:
-    """Apply fitted model to correct m/z values (Da correction)."""
+    """
+    Apply the calculated model to correct a full spectrum.
+
+    Parameters
+    ----------
+    mzs : np.ndarray
+        The raw m/z values to correct.
+    model : Any
+        A fitted linear model (e.g., from `fit_ransac_linear_model`).
+
+    Returns
+    -------
+    np.ndarray
+        The recalibrated m/z values.
+
+    Notes
+    -----
+    Correction follows: $m_{new} = m_{old} - \text{predicted\_error}$.
+    """
     mzs = np.asarray(mzs, dtype=float)
     X = np.vander(mzs, 2)
     pred_err = model.predict(X)
