@@ -172,6 +172,11 @@ class MSICube:
             If ``self.adata`` is ``None``.
         FileNotFoundError
             If the target directory does not exist.
+
+        .. code-block:: python
+            cube = MSICube(data_directory="path/to/data")
+            # ... perform analysis steps ...
+            saved_path = cube.save_adata(file_format="zarr")
         """
 
         if self.adata is None:

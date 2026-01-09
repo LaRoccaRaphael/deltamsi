@@ -27,6 +27,7 @@ extensions = [
 ]
 autosummary_generate = True
 autodoc_typehints = "description"
+autodoc_unqualified_typehints = True
 templates_path = ['_templates']
 exclude_patterns = []
 autodoc_mock_imports = [
@@ -58,4 +59,4 @@ nitpick_ignore = [
 
 html_theme = 'sphinx_book_theme'
 html_static_path = ['_static']
-
+exclude_patterns = ['**/recalibration_DEPRECATED.py', '**/_clean.py']

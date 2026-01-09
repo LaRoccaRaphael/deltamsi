@@ -75,3 +75,11 @@ include = ["src/pymsix"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "myst-parser>=4.0.1",
+    "sphinx>=8.2.3",
+    "sphinx-book-theme>=1.1.4",
+    "sphinx-copybutton>=0.5.2",
+]

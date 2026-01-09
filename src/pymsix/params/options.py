@@ -1,24 +1,52 @@
 """
-Phase 4 option specs (frozen dataclasses) for mean spectrum, peak picking,
-binning policy, and axis construction.
+MSI Processing Option Specifications
+====================================
 
-Design goals
+This module defines frozen dataclasses for configuring mean spectrum calculation, 
+peak picking, binning policies, and mass axis construction. 
+
+Design Goals
 ------------
-- Explicit, minimal, JSON-safe (use `asdict` for provenance).
-- Immutable (frozen=True) so runs are reproducible once options are created.
-- Light validation helpers (raise ValueError with human-friendly messages).
-- Separate concerns:
-  * BinningParams          — how to discretize m/z (ppm or Da) for profile data
-  * MeanSpectrumOptions    — how to aggregate per-spectrum into a mean spectrum (and common axis)
-  * CentroidingParams      — how to centroid profile spectra on-the-fly (optional)
-  * PeakPickParams         — how to pick peaks on the mean spectrum
-  * AxisPolicy             — how to form /var/mz (from peaks or a grid)
 
-These structs specify *what* to do; implementation lives in:
-- msix/core/spectrum/mean.py
-- msix/core/spectrum/peaks.py
-- msix/core/spectrum/axis.py
-- msix/core/builders/build_var_axis.py
+* **Explicit & Minimal**: JSON-safe structures that can be easily serialized 
+  (using ``asdict``) for metadata provenance and reproducibility.
+* **Immutable**: Classes use ``frozen=True`` to ensure that once a processing 
+  configuration is created, it cannot be modified during the run.
+* **Validation**: Integrated ``validate()`` methods provide human-friendly 
+  error messages for invalid parameter combinations.
+* **Separation of Concerns**: Decouples the *specification* of processing 
+  steps from their *implementation*.
+
+Functional Categories
+---------------------
+
+* **Binning & Aggregation**: How to discretize and merge m/z data (e.g., 
+  :class:`MeanSpectrumOptions`).
+* **Feature Detection**: Parameters for finding peaks and building intensity 
+  matrices (e.g., :class:`PeakPickingOptions`, :class:`PeakMatrixOptions`).
+* **Post-Processing**: Advanced options for recalibration, mass clustering, 
+  and Kendrick visualization.
+
+Notes
+-----
+The implementation of the logic defined by these options resides in 
+dedicated submodules:
+
+    * ``pymsix.core.msicube``
+    * ``pymsix.processing.combine_mean_spectra``
+    * ``pymsix.processing.mean_spectrum``
+    * ``pymsix.processing.peak_picking``
+    * ``pymsix.processing.recalibration``
+
+Examples
+--------
+>>> from pymsix.params import MeanSpectrumOptions, PeakPickingOptions
+>>> # Create a pipeline configuration
+>>> ms_opts = MeanSpectrumOptions(mode="centroid", binning_p=0.001)
+>>> pp_opts = PeakPickingOptions(topn=1000, distance_ppm=10.0)
+>>> # Validate before use
+>>> ms_opts.validate()
+>>> pp_opts.validate()
 """
 
 from dataclasses import dataclass, field
@@ -35,9 +63,6 @@ __all__ = [
 ]
 
 
-# ----------------------------- Option dataclasses -----------------------------
-
-
 @dataclass(frozen=True)
 class MeanSpectrumOptions:
     """
@@ -46,14 +71,32 @@ class MeanSpectrumOptions:
     These parameters define the common m/z axis and, optionally, the smoothing
     or smearing required for centroid data.
 
-    Attributes:
-        mode: The aggregation method: "profile" (simple binning) or "centroid" (smoothed binning).
-        min_mz: Minimum m/z value for the common axis.
-        max_mz: Maximum m/z value for the common axis.
-        binning_p: Bin width in Da (e.g., 0.0001).
-        tolerance_da: Constant Gaussian width in Da (1σ) for centroid mode, if mass_accuracy_ppm is None.
-        mass_accuracy_ppm: Instrument accuracy in ppm (1σ). If provided, this overrides tolerance_da.
-        n_sigma: Radius of the Gaussian window in σ units (e.g., 3.0 for ±3σ window).
+    Parameters
+    ----------
+    mode : {"profile", "centroid"}
+        The aggregation method. Use "profile" for simple binning or "centroid"
+        for smoothed binning using Gaussian kernels.
+    min_mz : float, default 0.0
+        Minimum m/z value for the common axis.
+    max_mz : float, default 2000.0
+        Maximum m/z value for the common axis.
+    binning_p : float, default 0.001
+        Bin width in Da (e.g., 0.0001).
+    tolerance_da : float, optional
+        Constant Gaussian width in Da (:math:`1\sigma`) for centroid mode.
+        Ignored if `mass_accuracy_ppm` is provided.
+    mass_accuracy_ppm : float, optional, default 3.0
+        Instrument accuracy in ppm (:math:`1\sigma`). If provided, this 
+        overrides `tolerance_da`.
+    n_sigma : float, default 3.0
+        Radius of the Gaussian window in :math:`\sigma` units 
+        (e.g., 3.0 for a :math:`\pm 3\sigma` window).
+
+    Examples
+    --------
+    >>> from pymsix.params import MeanSpectrumOptions
+    >>> opts = MeanSpectrumOptions(mode="centroid", binning_p=0.005, mass_accuracy_ppm=5.0)
+    >>> opts.validate()
     """
     __module__ = "pymsix.params"
 
@@ -69,8 +112,10 @@ class MeanSpectrumOptions:
         """
         Validates the coherence of the mean spectrum options.
 
-        Raises:
-            ValueError: If any option combination is invalid.
+        Raises
+        ------
+        ValueError
+            If any option combination is invalid.
         """
         if self.mode not in {"profile", "centroid"}:
             raise ValueError(
@@ -102,11 +147,22 @@ class GlobalMeanSpectrumOptions:
     """
     Options for combining multiple mean spectra into a single global spectrum.
 
-    Attributes:
-        binning_p: Bin width in Da for the common m/z axis during combination.
-        use_intersection: If True, the common axis is built only on the overlapping m/z range.
-        tic_normalize: If True, each mean spectrum is TIC-normalized before averaging.
-        compress_axis: If True, drop bins where the final mean intensity is zero.
+    Parameters
+    ----------
+    binning_p : float, default 0.0001
+        Bin width in Da for the common m/z axis during combination.
+    use_intersection : bool, default True
+        If True, the common axis is built only on the overlapping m/z range.
+    tic_normalize : bool, default True
+        If True, each mean spectrum is TIC-normalized before averaging.
+    compress_axis : bool, default False
+        If True, drop bins where the final mean intensity is zero.
+
+    Examples
+    --------
+    >>> from pymsix.params import GlobalMeanSpectrumOptions
+    >>> opts = GlobalMeanSpectrumOptions(binning_p=0.0005, tic_normalize=False)
+    >>> opts.validate()
     """
     __module__ = "pymsix.params"
 
@@ -122,7 +178,26 @@ class GlobalMeanSpectrumOptions:
 
 @dataclass(frozen=True)
 class PeakPickingOptions:
-    """Options for peak picking on a spectrum."""
+    """
+    Options for peak picking on a spectrum.
+
+    Parameters
+    ----------
+    topn : int, default 10000
+        Maximum number of peaks to retain.
+    binning_p : float, default 1e-4
+        Bin width in Da used during the peak finding process.
+    distance_da : float, optional
+        Minimum distance between peaks in Daltons.
+    distance_ppm : float, optional
+        Minimum distance between peaks in ppm.
+
+    Examples
+    --------
+    >>> from pymsix.params import PeakPickingOptions
+    >>> opts = PeakPickingOptions(topn=500, distance_ppm=10.0)
+    >>> opts.validate()
+    """
     __module__ = "pymsix.params"
 
     topn: int = 10000
@@ -162,7 +237,22 @@ class PeakPickingOptions:
 
 @dataclass(frozen=True)
 class PeakMatrixOptions:
-    """Options for extracting the peak intensity matrix (X)."""
+    """
+    Options for extracting the peak intensity matrix (X).
+
+    Parameters
+    ----------
+    tol_da : float, optional
+        Matching tolerance in Daltons.
+    tol_ppm : float, optional
+        Matching tolerance in ppm.
+
+    Examples
+    --------
+    >>> from pymsix.params import PeakMatrixOptions
+    >>> opts = PeakMatrixOptions(tol_ppm=5.0)
+    >>> opts.validate()
+    """
     __module__ = "pymsix.params"
 
     tol_da: Optional[float] = None
@@ -189,16 +279,28 @@ class PeakMatrixOptions:
 @dataclass(frozen=True)
 class RecalibrationOptions:
     """
-    Options for performing mass spectrometry imaging (MSI) recalibration
-    using a mass database and the RANSAC algorithm.
+    Options for performing MSI recalibration using RANSAC.
 
-    Attributes (matching recalibration_core.RecalParams):
-        tol_da: Dalton tolerance for identifying calibration hits (e.g., 0.03 Da).
-        tol_ppm: Matching tolerance in ppm. If provided, overrides tol_da for per-peak tolerance calculation.
-        kde_bw_da: Bandwidth for the Kernel Density Estimation (KDE) function (e.g., 0.002 Da).
-        roi_halfwidth_da: ROI half-width around the error mode (e.g., 0.02 Da).
-        n_peaks: Number of top intense peaks per spectrum to use for hit search (e.g., 1000).
-        min_hits_for_fit: Minimum number of hits (after ROI) needed to fit the RANSAC model (e.g., 20).
+    Parameters
+    ----------
+    tol_da : float, default 0.03
+        Dalton tolerance for identifying calibration hits.
+    tol_ppm : float, optional
+        Matching tolerance in ppm. Overrides `tol_da` if provided.
+    kde_bw_da : float, default 0.002
+        Bandwidth for the Kernel Density Estimation (KDE) function.
+    roi_halfwidth_da : float, default 0.02
+        ROI half-width around the error mode in Da.
+    n_peaks : int, default 1000
+        Number of top intense peaks per spectrum used for hit search.
+    min_hits_for_fit : int, default 20
+        Minimum number of hits needed to fit the RANSAC model.
+
+    Examples
+    --------
+    >>> from pymsix.params import RecalibrationOptions
+    >>> opts = RecalibrationOptions(tol_ppm=20.0, n_peaks=500)
+    >>> opts.validate()
     """
     __module__ = "pymsix.params"
 
@@ -240,10 +342,61 @@ class RecalibrationOptions:
 @dataclass(frozen=True)
 class MassClusteringOptions:
     """
-    Options for clustering m/z values.
+    Options for clustering m/z values based on matching or colocalization.
 
-    The ``method`` parameter selects between candidate-based clustering
-    (``"candidates"``) and colocalization-based clustering (``"colocalization"``).
+    This class configures the construction of a graph where nodes are m/z peaks 
+    and edges represent relationships (mass shifts or spatial similarity). 
+    Community detection (Leiden/Louvain) is then applied to find clusters.
+
+    Parameters
+    ----------
+    method : {"candidates", "colocalization"}, default "candidates"
+        Clustering strategy. "candidates" uses theoretical mass shifts (e.g., isotopes, 
+        adducts). "colocalization" uses spatial correlation between ion images.
+    tol_da : float, default 0.005
+        Absolute tolerance in Daltons for matching mass differences between peaks.
+    tol_ppm : float, optional
+        Relative tolerance in ppm for matching mass differences. If set, it 
+        usually overrides or complements `tol_da`.
+    edge_max_delta_m : float, optional
+        Maximum mass difference (in Da) allowed to create an edge between two peaks.
+    delta_col : str, default "delta_da"
+        Name of the column containing the mass difference values in the input data.
+    score_col : str, default "score"
+        Name of the column used to weight edges (e.g., matching score or correlation).
+    label_col : str, optional, default "label"
+        Column name for annotation labels used during the clustering process.
+    resolution : float, default 1.0
+        Resolution parameter for the Louvain/Leiden algorithm. Higher values 
+        lead to more (smaller) clusters.
+    weight_transform : str or callable, default "inv1p"
+        Transformation to apply to `score_col` to compute edge weights. 
+        "inv1p" compute :math:`1 / (1 + x)`.
+    weight_kwargs : dict
+        Additional keyword arguments passed to the `weight_transform` function.
+    knn_k : int, optional
+        If provided, prunes the graph to keep only the top `k` neighbors per node.
+    knn_mode : {"union", "mutual"}, default "union"
+        Logic for k-NN pruning. "union" keeps an edge if either node is in 
+        the other's k-NN; "mutual" requires both.
+    coloc_varp_key : str, optional, default "ion_cosine"
+        Key in the `varp` (variable properties) used for colocalization 
+        similarity (e.g., Cosine or Pearson).
+    edge_max_delta_cosine : float, optional
+        Minimum similarity threshold for creating an edge in colocalization mode.
+    return_graph : bool, default False
+        If True, the underlying NetworkX/igraph object is returned with the results.
+
+    Examples
+    --------
+    >>> from pymsix.params import MassClusteringOptions
+    >>> # Configure colocalization clustering with k-NN pruning
+    >>> opts = MassClusteringOptions(
+    ...     method="colocalization", 
+    ...     knn_k=5, 
+    ...     resolution=0.8
+    ... )
+    >>> opts.validate()
     """
     __module__ = "pymsix.params"
 
@@ -301,41 +454,89 @@ class MassClusteringOptions:
 @dataclass
 class KendrickPlotOptions:
     """
-    Paramètres de configuration pour la génération de diagrammes de Kendrick.
+    Configuration parameters for generating Kendrick Mass Plots.
+
+    The Kendrick Mass Defect (KMD) is used to identify homologous series 
+    (e.g., :math:`CH_2` chains). This class controls both the calculation 
+    and the aesthetic rendering of the plots.
+
+    Parameters
+    ----------
+    base : str, float or tuple, default "CH2"
+        The formula (e.g., "CH2", "H2O") or exact mass used as the Kendrick base.
+    mass_col : str, default "mz"
+        The column in the data containing the m/z values to transform.
+    kendrick_varm_key : str, optional
+        Key to store/retrieve the calculated Kendrick values in the object's metadata.
+    x_axis : {"kendrick_mass", "m_over_z"}, default "kendrick_mass"
+        Values to display on the horizontal axis.
+    kmd_mode : {"fraction", "defect"}, default "fraction"
+        Type of KMD to plot. "fraction" is the classic Kendrick mass defect; 
+        "defect" refers to the remainder after rounding.
+    point_size : float, default 24.0
+        Size of the markers in the scatter plot.
+    alpha : float, default 0.9
+        Transparency of the points (0 to 1).
+    hgrid_step : float, default 1.0
+        The interval between horizontal grid lines.
+    jitter : float, default 0.0
+        Amount of random horizontal noise added to points to prevent overlap 
+        in dense series.
+    annotate : bool, default False
+        If True, adds text labels to specific points in the plot.
+    max_ann_per_group : int, default 0
+        Maximum number of annotations allowed per cluster/group.
+    top_k_clusters : int, optional, default 20
+        Only display the top `k` largest clusters. Set to None for all.
+    selected_clusters : list of int, optional
+        Explicit list of cluster IDs to display.
+    include_minus1_in_top : bool, default True
+        Whether to include the unassigned cluster (ID -1) when calculating the top `k`.
+    min_cluster_size : int, default 1
+        Clusters smaller than this value will be hidden.
+    two_panels : bool, default True
+        If True, splits the plot into two panels (e.g., All ions vs. Clustered ions).
+    figsize : tuple of float, default (9.0, 4.5)
+        Width and height of the figure in inches.
+    dpi : int, default 140
+        Resolution of the figure (Dots Per Inch).
+
+    Examples
+    --------
+    >>> from pymsix.params import KendrickPlotOptions
+    >>> # Plot using H2O as base for lipid analysis
+    >>> opts = KendrickPlotOptions(base="H2O", point_size=40, annotate=True)
+    >>> opts.validate()
     """
     __module__ = "pymsix.params"
 
-    # Paramètres de base Kendrick
     base: Union[str, float, Tuple[float, float]] = "CH2"
     mass_col: str = "mz"
     kendrick_varm_key: Optional[str] = None
 
-    # Axes et Style
-    x_axis: str = "kendrick_mass"  # 'kendrick_mass' ou 'm_over_z'
-    kmd_mode: str = "fraction"  # 'fraction' ou 'defect'
+
+    x_axis: str = "kendrick_mass"
+    kmd_mode: str = "fraction"
     point_size: float = 24.0
     alpha: float = 0.9
     hgrid_step: float = (
-        1.0  # Pas de la grille KMD (1.0 pour fraction, ~0.1 pour defect)
+        1.0
     )
-    jitter: float = 0.0  # Bruit horizontal pour éviter les superpositions
+    jitter: float = 0.0
 
-    # Annotations
     annotate: bool = False
-    max_ann_per_group: int = 0  # Nombre max de points annotés par groupe (index)
+    max_ann_per_group: int = 0 
 
-    # Filtres de Clusters
-    top_k_clusters: Optional[int] = 20  # Garder seulement les K plus grands clusters
+    top_k_clusters: Optional[int] = 20
     selected_clusters: Optional[List[int]] = (
-        None  # Liste explicite d'IDs de clusters (ex: [0, 1, 5])
+        None
     )
     include_minus1_in_top: bool = (
-        True  # Inclure le cluster -1 (non-assignés) dans le top K
+        True
     )
-    min_cluster_size: int = 1  # Taille minimale d'un cluster pour être affiché
+    min_cluster_size: int = 1
 
-    # Mise en page
-    two_panels: bool = True  # Second panneau coloré par 'family' si disponible
+    two_panels: bool = True
     figsize: Tuple[float, float] = (9.0, 4.5)
     dpi: int = 140
 
