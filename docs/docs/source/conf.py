@@ -24,7 +24,10 @@ extensions = [
     'sphinx.ext.viewcode',
     'myst_parser',
     'sphinx_copybutton',
+    'matplotlib.sphinxext.plot_directive',
 ]
+napoleon_google_docstring = False
+napoleon_numpy_docstring = True
 autosummary_generate = True
 autodoc_typehints = "description"
 autodoc_unqualified_typehints = True
