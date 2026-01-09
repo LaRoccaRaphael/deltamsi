@@ -1,10 +1,32 @@
-"""Interactive manual labeling in Kendrick space for :class:`~pymsix.core.msicube.MSICube`.
+"""
+Interactive Kendrick Space Labeling
+===================================
 
-This module exposes a Plotly + ipywidgets helper that mirrors the workflow described in
-the user request. It reads Kendrick coordinates stored in ``adata.varm`` (created via
-``compute_kendrick_varm``), lets the user select a region with a lasso/box tool, and
-writes the chosen label back into ``adata.var``. The returned widget updates colors live
-and provides the selected indices and variable names for export.
+This module provides interactive visualization and manual annotation tools for 
+Mass Spectrometry Imaging (MSI) variables in the Kendrick mass space. 
+
+It leverages ``Plotly FigureWidgets`` and ``ipywidgets`` to create a tight 
+integration within Jupyter Notebook/Lab environments. Users can visually identify 
+homologous series (e.g., lipid families) using lasso or box selection tools 
+and write metadata directly back to the :class:`~pymsix.core.msicube.MSICube` 
+underlying ``AnnData.var`` table.
+
+Main Features
+-------------
+* **Live Interactivity**: Real-time synchronization between Plotly selections 
+  and Python state.
+* **Persistent Labeling**: Labels are written to ``adata.var``, making them 
+  available for downstream filtering or statistical analysis.
+* **Visual Feedback**: The plot updates marker colors instantly as labels are applied.
+* **Memory Efficient**: Handles large variable sets by using specialized 
+  Plotly components and providing performance warnings.
+
+Notes
+-----
+This module requires the ``viz`` optional dependencies:
+    * ``plotly``
+    * ``ipywidgets``
+    * ``anywidget``
 """
 
 from __future__ import annotations
@@ -25,7 +47,19 @@ if TYPE_CHECKING:
 
 @dataclass
 class KendrickManualLabelState:
-    """Holds the current manual selection in Kendrick space."""
+    """
+    Data container for the current manual selection state.
+
+    This object is updated dynamically as the user interacts with the 
+    Kendrick plot.
+
+    Parameters
+    ----------
+    selected_var_pos : list of int
+        Integer indices of the variables currently selected in the plot.
+    selected_var_names : list of str
+        Names (indices of ``adata.var``) of the selected variables.
+    """
 
     selected_var_pos: List[int]
     selected_var_names: List[str]
@@ -45,28 +79,72 @@ def manual_label_vars_from_kendrick(
     max_points_warn: int = 120_000,
 ) -> Tuple[widgets.VBox, KendrickManualLabelState]:
     """
-    Interactive manual labeling of ``adata.var`` based on a region selected in Kendrick space.
+    Create an interactive widget for manual variable labeling in Kendrick space.
 
-    Args:
-        msicube: The :class:`~pymsix.core.msicube.MSICube` instance holding the AnnData object.
-        varm_key: The key in ``adata.varm`` that contains Kendrick coordinates
-            (as produced by :func:`pymsix.processing.kendrick.compute_kendrick_varm`).
-        label_key: Column name to write in ``adata.var`` for the manual labels.
-        default_label: Value to use for unannotated variables.
-        mz_key: Optional column in ``adata.var`` containing m/z values for hover display.
-        coord_cols: Column indices inside ``adata.varm[varm_key]`` to use as (KM, KMD).
-        dragmode: Plotly drag mode ("lasso" or "select").
-        point_size: Marker size in the scatter plot.
-        height: Plot height in pixels.
-        max_points_warn: Threshold above which a warning is printed about interactivity speed.
+    This function generates a user interface combining a Plotly scatter plot 
+    and Jupyter widgets. It allows users to select regions of points and 
+    assign them to specific categories (e.g., "Lipid Series A").
 
-    Returns:
-        A tuple ``(ui, state)`` where ``ui`` is a :class:`ipywidgets.VBox` to display in a
-        notebook cell and ``state`` holds the last selection (positions and var names).
+    Parameters
+    ----------
+    msicube : MSICube
+        The MSICube instance containing the data. ``msicube.adata`` must not be None.
+    varm_key : str
+        The key in ``adata.varm`` where Kendrick coordinates (KM, KMD) are stored.
+    label_key : str, default "manual_label"
+        The column name in ``adata.var`` where selected labels will be saved.
+    default_label : str, default "unlabeled"
+        The initial value for variables that haven't been manually labeled yet.
+    mz_key : str, optional, default "mz"
+        Column name in ``adata.var`` containing m/z values, used for hover tooltips.
+    coord_cols : tuple of int, default (0, 1)
+        The indices of columns within ``adata.varm[varm_key]`` to use for the 
+        X (Kendrick Mass) and Y (Kendrick Mass Defect) axes.
+    dragmode : {"lasso", "select"}, default "lasso"
+        The default selection tool active when the plot loads.
+    point_size : int, default 6
+        Diameter of markers in pixels.
+    height : int, default 650
+        Total height of the Plotly figure in pixels.
+    max_points_warn : int, default 120,000
+        Maximum number of points before a performance warning is issued.
 
-    Notes:
-        * Requires the optional ``viz`` dependencies (``plotly`` + ``ipywidgets`` + ``anywidget``).
-        * Best used in Jupyter Notebook/Lab due to reliance on ``FigureWidget`` callbacks.
+    Returns
+    -------
+    ui : ipywidgets.VBox
+        The graphical user interface to be displayed in a Jupyter cell.
+    state : KendrickManualLabelState
+        An object that tracks the current selection, allowing access to selected 
+        indices from other notebook cells.
+
+    Raises
+    ------
+    ValueError
+        If ``msicube.adata`` is empty or if no finite Kendrick coordinates are found.
+    KeyError
+        If ``varm_key`` is missing from ``adata.varm``.
+    ImportError
+        If required visualization libraries (``anywidget``, ``plotly``) are missing.
+
+    Notes
+    -----
+    The widget updates the ``adata.var`` table of the input `msicube` object 
+    **in-place**. To persist your annotations, ensure you save the 
+    MSICube/AnnData object to disk after labeling.
+
+    Examples
+    --------
+    >>> from pymsix.plotting.kendrick_manual import manual_label_vars_from_kendrick
+    >>> # Assuming msicube is already loaded and compute_kendrick_varm has been run
+    >>> ui, state = manual_label_vars_from_kendrick(
+    ...     msicube, 
+    ...     varm_key="kendrick_CH2", 
+    ...     label_key="lipid_family"
+    ... )
+    >>> ui  # Display the widget in Jupyter
+    
+    # In another cell, check what was selected:
+    >>> print(f"Currently selecting {len(state.selected_var_names)} variables")
     """
 
     if msicube.adata is None:

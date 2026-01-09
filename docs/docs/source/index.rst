@@ -13,3 +13,4 @@ Pymsix documentation
    pymsix.core
    pymsix.params
    pymsix.processing
+   pymsix.plotting

@@ -1,3 +1,15 @@
+"""
+Mean Spectrum Visualization Module
+==================================
+
+This module provides tools for comparative visualization of mean mass spectra.
+It allows for detailed "windowed" inspections of specific m/z regions across 
+multiple samples, facilitating peak verification and alignment checks.
+
+The visualization highlights target m/z values and their associated 
+tolerance ranges (in Da or ppm) using standardized scientific plotting styles.
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Sequence, Optional, Tuple, Iterable, List, TYPE_CHECKING
@@ -19,6 +31,35 @@ def _plot_mean_spectrum_windows_core(
 ) -> None:
     """
     Internal low-level function to plot zoomed windows of multiple mean spectra.
+
+    This function handles the heavy lifting of grid layout, window slicing, 
+    and multi-trace overlay.
+
+    Parameters
+    ----------
+    mean_spectra : iterable of (np.ndarray, np.ndarray)
+        An iterable containing tuples of (mz_array, intensity_array).
+    peak_mzs : sequence of float
+        Target m/z values to center each subplot window.
+    span_da : float
+        The total width of the m/z window (horizontal axis range) in Daltons.
+    tol_da : float, optional
+        Absolute tolerance in Daltons to display as vertical dashed lines.
+    tol_ppm : float, optional
+        Relative tolerance in parts per million (ppm) to display as vertical 
+        dashed lines. Overrides `tol_da` for the visual lines if both provided.
+    ncols : int, default 3
+        Number of columns in the subplot grid.
+    labels : sequence of str, optional
+        Labels for each mean spectrum to be displayed in the legend.
+    figsize : tuple of float, optional
+        Width and height of the figure in inches.
+
+    Raises
+    ------
+    ValueError
+        If `span_da` <= 0, if neither or both tolerances are provided, 
+        or if `mean_spectra` is empty.
     """
     if span_da <= 0:
         raise ValueError("span_da must be > 0.")
@@ -124,19 +165,62 @@ def plot_mean_spectrum_windows(
     figsize: Optional[Tuple[float, float]] = None,
 ) -> None:
     """
-    Plots zoomed windows around specified m/z peaks from one or more mean spectra.
+    Plot zoomed m/z windows around specified peaks from MSICube mean spectra.
 
-    Args:
-        msicube: The MSICube object containing mean spectra in adata.uns['mean_spectra'].
-        peak_mzs: Sequence of m/z values to center the plots around.
-        labels: Names of the samples (as found in adata.obs['sample']) to plot.
-                If None, all mean spectra found in adata.uns['mean_spectra'] are plotted.
-                (Note: Cette implémentation ne supporte pas 'None' pour les labels).
-        span_da: Total width of the m/z window in Dalton (Da).
-        tol_da: Tolerance in Dalton (Da) to show dashed lines.
-        tol_ppm: Tolerance in ppm to show dashed lines.
-        ncols: Number of columns in subplot grid.
-        figsize: Figure size.
+    This function retrieves pre-computed mean spectra from the ``MSICube`` 
+    metadata and generates a grid of subplots. Each subplot displays an 
+    overlay of the selected samples' spectra centered around a specific m/z.
+
+    Parameters
+    ----------
+    msicube : MSICube
+        The MSICube instance. Must have ``adata.uns['mean_spectra']`` populated 
+        (usually via ``compute_all_mean_spectra()``).
+    peak_mzs : sequence of float
+        The m/z values used as centers for the zoomed subplots.
+    labels : sequence of str, optional
+        The names of specific samples to plot (must exist in 
+        ``adata.uns['mean_spectra']``). If ``None``, all available samples 
+        in the metadata are plotted.
+    span_da : float, default 1.0
+        Total width of the m/z window in Daltons.
+    tol_da : float, optional
+        Show tolerance boundaries as dashed lines using absolute Daltons.
+    tol_ppm : float, optional
+        Show tolerance boundaries as dashed lines using relative ppm.
+    ncols : int, default 3
+        Number of columns in the subplot grid.
+    figsize : tuple of float, optional
+        Figure size in inches (width, height). If ``None``, the size is 
+        automatically determined based on the number of subplots.
+
+    Notes
+    -----
+    The function displays a red dashed line at the exact ``peak_mz`` and grey 
+    dotted lines for the tolerance boundaries. If multiple samples are plotted, 
+    a legend is automatically added to each subplot.
+
+    
+
+    Examples
+    --------
+    >>> from pymsix.plotting.spectra import plot_mean_spectrum_windows
+    >>> # Plot windows for 3 specific m/z values across all samples
+    >>> plot_mean_spectrum_windows(
+    ...     msicube, 
+    ...     peak_mzs=[184.073, 520.34, 760.58], 
+    ...     span_da=0.5, 
+    ...     tol_ppm=10.0
+    ... )
+
+    >>> # Compare only two specific samples in a 0.2 Da window
+    >>> plot_mean_spectrum_windows(
+    ...     msicube, 
+    ...     peak_mzs=[760.58], 
+    ...     labels=["Control_01", "Treated_01"],
+    ...     span_da=0.2, 
+    ...     tol_da=0.005
+    ... )
     """
     if msicube.adata is None:
         raise ValueError("MSICube.adata is None.")

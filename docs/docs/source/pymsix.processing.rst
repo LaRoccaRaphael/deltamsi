@@ -120,7 +120,6 @@ pymsix.processing.recalibration\_core module
    :members:
    :show-inheritance:
    :undoc-members:
-   :no-index:
 
 pymsix.processing.spatial\_chaos module
 ---------------------------------------

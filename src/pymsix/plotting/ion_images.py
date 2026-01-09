@@ -1,3 +1,29 @@
+"""
+Ion Image Visualization Module
+==============================
+
+This module provides high-level plotting functions for Mass Spectrometry Imaging 
+(MSI) data. It is specifically designed to work with ``MSICube`` objects and 
+their underlying ``AnnData`` structures.
+
+The main focus is on producing "publication-ready" visualizations with consistent 
+intensity scales, scientific color maps, and clear layout management for 
+multi-sample or multi-ion comparisons.
+
+Design Philosophy
+-----------------
+* **Non-destructive**: Input data is never modified in-place.
+* **Scale Awareness**: Multiple scaling modes (global, per-sample, per-ion) 
+  ensure that intensity comparisons are biologically and technically meaningful.
+* **Flexibility**: Supports plotting both raw m/z channels and aggregated 
+  labels (e.g., from clustering or decomposition).
+
+Notes
+-----
+The module configures global ``matplotlib.rcParams`` on import to ensure 
+consistent font sizes and DPI settings across all generated figures.
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Sequence, Optional, Tuple, Union, Literal
@@ -5,9 +31,6 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from collections import defaultdict
 
 
-# ------------------------------------------------------------------
-# Global plotting style (modern & scientific)
-# ------------------------------------------------------------------
 plt.rcParams.update({
     "font.family": "DejaVu Sans",
     "font.size": 10,
@@ -36,22 +59,84 @@ def plot_ion_images(
     label_obsm_key: str = "X_by_label",
 ) -> None:
     """
-    Plot modern, clean and scientifically robust MSI ion images.
+    Plot modern, clean, and scientifically robust MSI ion images.
+
+    This function extracts spatial coordinates and intensity data from an 
+    AnnData object to reconstruct 2D ion heatmaps. It automatically handles 
+    m/z lookup or label-based retrieval (e.g., from factorization results).
 
     Parameters
     ----------
-    layer:
-        Name of the ``AnnData.layers`` entry to plot. If ``None``, uses ``adata.X``.
-    scale_mode:
-        - "per_sample": same scale for all ions of a given sample (RECOMMENDED)
-        - "per_ion":    same scale for one ion across samples
-        - "global":     same scale for all plots
-        - "local":      independent scale per image
+    msicube : MSICube
+        The MSICube instance containing the ``adata`` to plot.
+    mz : float, str or sequence of (float or str)
+        The m/z value(s) or label(s) to visualize. If floats are provided, 
+        the closest m/z in the dataset is selected.
+    samples : str or sequence of str
+        The sample name(s) to include in the plot (must exist in ``adata.obs['sample']``).
+    layer : str, optional
+        Name of the ``AnnData.layers`` entry to plot. If ``None``, 
+        uses the main data matrix ``adata.X``.
+    scale_mode : {"per_sample", "per_ion", "global", "local"}, default "per_sample"
+        Intensity scaling strategy:
+        
+        * ``"per_sample"``: Same scale for all ions of a given sample. Recommended 
+          for comparing relative intensities within a tissue.
+        * ``"per_ion"``: Same scale for one specific ion across all samples. 
+          Ideal for comparing abundance across different tissues.
+        * ``"global"``: Same min/max for every single subplot in the figure.
+        * ``"local"``: Each image is scaled independently to its own min/max.
+    ncols : int, default 3
+        Number of columns in the figure grid.
+    cmap : str, default "turbo"
+        The Matplotlib colormap used for the heatmaps.
+    figsize : tuple of float, optional
+        Figure size (width, height) in inches. If ``None``, it is 
+        automatically calculated based on `ncols`.
+    show_axes : bool, default True
+        Whether to show pixel coordinates (X/Y) and labels on the axes.
+    obsm_key : str, optional
+        Specific key in ``adata.obsm`` to use if plotting labels instead of m/z.
+    label_obsm_key : str, default "X_by_label"
+        Default key in ``adata.obsm`` used for aggregated feature plotting.
+
+    Raises
+    ------
+    ValueError
+        If the MSICube does not contain an AnnData object.
+    KeyError
+        If the specified `layer` is not found in the AnnData object.
 
     Notes
     -----
-    The underlying ``AnnData`` object is never modified in-place. Intensity values are
-    copied before any scaling so that ``adata.X`` or the chosen layer remain unchanged.
+    The underlying ``AnnData`` object is never modified in-place. Intensity 
+    values are copied before any scaling so that the source data remains unchanged.
+
+    
+
+    Examples
+    --------
+    .. plot::
+        :include-source:
+
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from pymsix import MSICube
+        import anndata
+
+        # Create dummy MSI data
+        X = np.random.rand(100, 10)
+        spatial = np.array([[i % 10, i // 10] for i in range(100)])
+        adata = anndata.AnnData(X, obsm={"spatial": spatial})
+        adata.obs['sample'] = "Sample_A"
+        adata.var['m/z'] = np.linspace(100, 1000, 10)
+        
+        class MockCube: adata = None
+        cube = MockCube(); cube.adata = adata
+
+        # Plot two m/z values
+        from pymsix.plotting.ion_images import plot_ion_images
+        plot_ion_images(cube, mz=[100.0, 500.0], samples="Sample_A", ncols=2)
     """
 
     if msicube.adata is None:

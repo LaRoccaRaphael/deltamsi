@@ -6,7 +6,6 @@ pymsix.params package
    :show-inheritance:
    :undoc-members:
 
-
 Submodules
 ----------
 
@@ -17,6 +16,3 @@ pymsix.params.options module
    :members:
    :show-inheritance:
    :undoc-members:
-   :member-order: bysource
-
-   .. rubric:: Dataclass details

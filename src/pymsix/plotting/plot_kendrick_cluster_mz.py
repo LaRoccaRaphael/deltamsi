@@ -1,4 +1,15 @@
-# --- Kendrick plotting from cluster_masses_with_candidates result ---
+"""
+Kendrick Analysis for Clustering Results
+========================================
+
+This module provides tools to bridge mass clustering results with Kendrick Mass 
+Defect (KMD) analysis. It allows for the construction of structured DataFrames 
+and high-quality visualizations that highlight how clusters align with 
+homologous series.
+
+The module automatically handles the synchronization between clustering labels 
+and Kendrick coordinates stored in ``AnnData.varm``.
+"""
 
 from __future__ import annotations
 
@@ -80,11 +91,47 @@ def kendrick_df_from_clustering(
     mass_col: str = "exact_molecular_weight",
 ) -> pd.DataFrame:
     """
-    Build a DataFrame combining clustering labels and pre-computed Kendrick coordinates.
+    Build a DataFrame combining clustering labels and Kendrick coordinates.
 
-    Kendrick coordinates are fetched from ``adata.varm``. If they are missing, they are
-    computed automatically with :func:`compute_kendrick_varm` using the provided base
-    (``CH2`` by default).
+    This function aligns mass values with their corresponding cluster IDs and 
+    retrieves (or computes) Kendrick coordinates from the provided AnnData object.
+
+    Parameters
+    ----------
+    masses : sequence of float
+        The list of m/z values or exact masses that were clustered.
+    clustering_result : mapping
+        A dictionary-like object containing a ``'labels'`` key (e.g., the output 
+        of candidate-based clustering).
+    adata : ad.AnnData
+        The AnnData object containing variable metadata. Must align with `masses`.
+    family : sequence of object, optional
+        Secondary grouping labels (e.g., chemical families) to include in the 
+        resulting DataFrame.
+    base : str, float or tuple, default "CH2"
+        The Kendrick base used for scaling (e.g., "CH2", "H2O").
+    kmd_mode : {"fraction", "defect"}, default "fraction"
+        The type of Kendrick Mass Defect to calculate/retrieve.
+    kendrick_varm_key : str, optional
+        Specific key in ``adata.varm`` to look for. If None, a default key is 
+        generated based on `base` and `kmd_mode`.
+    mz_key : str, default "mz"
+        The column name in ``adata.var`` used for m/z values during computation.
+    mass_col : str, default "exact_molecular_weight"
+        The name for the mass column in the output DataFrame.
+
+    Returns
+    -------
+    pd.DataFrame
+        A table containing masses, clusters, families (if provided), 
+        ``kendrick_mass``, and the requested KMD column.
+        The DataFrame includes a ``kendrick_info`` attribute in ``.attrs``.
+
+    Raises
+    ------
+    ValueError
+        If lengths of inputs do not match or if Kendrick coordinates are 
+        incompatible with the requested mode.
     """
 
     masses_arr: NDArray[np.floating] = np.asarray(masses, dtype=float)
@@ -168,11 +215,91 @@ def plot_kendrick_from_clustering(
     figsize: Tuple[float, float] = (9, 4.5),
 ) -> tuple[plt.Figure, list[plt.Axes] | plt.Axes, pd.DataFrame]:
     """
-    Build Kendrick plots directly from cluster_masses_with_candidates result.
+    Generate Kendrick plots directly from mass clustering outputs.
 
-    Kendrick coordinates are expected in ``adata.varm``; if the requested key is
-    absent, they are computed automatically from ``adata.var`` using the provided base.
-    Returns (fig, axes, df_used), where df_used is the filtered table with Kendrick columns.
+    This function produces scatter plots where points are colored by their 
+    assigned cluster. It supports advanced filtering (top K clusters, 
+    size-based pruning) and optional secondary panels for chemical families.
+
+    Parameters
+    ----------
+    masses : sequence of float
+        The list of m/z values that were clustered.
+    clustering_result : mapping
+        The output from clustering containing labels.
+    adata : ad.AnnData
+        The AnnData object where Kendrick coordinates are stored or will be computed.
+    kendrick_varm_key : str, optional
+        Key to retrieve pre-computed coordinates from ``adata.varm``.
+    family : sequence of object, optional
+        Labels for a second panel (e.g., compound classes). Only used if 
+        `two_panels` is True.
+    base : str, float or tuple, default "CH2"
+        The Kendrick base for the X-axis scaling.
+    mass_col : str, default "exact_molecular_weight"
+        The label for the mass column.
+    x_axis : {"kendrick_mass", "m_over_z"}, default "kendrick_mass"
+        Which value to display on the horizontal axis.
+    kmd_mode : {"fraction", "defect"}, default "fraction"
+        The KMD calculation mode for the vertical axis.
+    point_size : float, default 24
+        Size of the scatter markers.
+    alpha : float, default 0.9
+        Transparency of the points.
+    hgrid_step : float, default 1.0
+        The interval for horizontal dashed grid lines.
+    jitter : float, default 0.0
+        Standard deviation of random noise added to the X-axis to reduce 
+        point overlap.
+    annotate : bool, default False
+        If True, adds row indices as text labels to points.
+    max_ann_per_group : int, default 0
+        Maximum number of points to annotate within each cluster/family.
+    top_k_clusters : int, optional
+        If set, only the `k` largest clusters are displayed.
+    selected_clusters : list of int, optional
+        Explicit list of cluster IDs to plot (e.g., [1, 5, 12]).
+    include_minus1_in_top : bool, default True
+        Whether to consider cluster "-1" (noise/unassigned) when 
+        calculating the top `k` clusters.
+    min_cluster_size : int, default 1
+        Clusters with fewer members than this value will be filtered out.
+    two_panels : bool, default True
+        If True and `family` is provided, creates a side-by-side plot 
+        (Cluster vs. Family).
+    figsize : tuple of float, default (9, 4.5)
+        Width and height of the figure in inches.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The generated figure object.
+    axes : list of matplotlib.axes.Axes or Axes
+        The axes containing the plots.
+    df_used : pd.DataFrame
+        The filtered DataFrame containing all plotted data and Kendrick coordinates.
+
+    Notes
+    -----
+    
+    
+    The Kendrick Mass Defect (KMD) allows the identification of homologous 
+    series. In this plot, points belonging to the same series (differing 
+    only by the `base` unit) will align horizontally.
+
+    Examples
+    --------
+    >>> import anndata as ad
+    >>> from pymsix.plotting.kendrick import plot_kendrick_from_clustering
+    >>> # Assuming clustering_res is the output of mass clustering
+    >>> fig, ax, df = plot_kendrick_from_clustering(
+    ...     masses=my_mass_list,
+    ...     clustering_result=clustering_res,
+    ...     adata=my_adata,
+    ...     top_k_clusters=10,
+    ...     base="CH2"
+    ... )
+    >>> fig.show()
     """
     # Build full DF
     df = kendrick_df_from_clustering(
