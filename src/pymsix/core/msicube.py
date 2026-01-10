@@ -76,7 +76,10 @@ from pymsix.processing.recalibration_core import (
 from pymsix.processing.recalibration_cli_clean import write_corrected_msi
 from pymsix.processing.recal_visu_clean import diagnostics_for_pixel, select_pixels
 
-from pymsix.processing.mass_clustering import cluster_masses_with_candidates
+from pymsix.processing.mass_clustering import (
+    cluster_masses_from_colocalization,
+    cluster_masses_with_candidates,
+)
 from pymsix.processing.kendrick import compute_kendrick_varm
 from pymsix.plotting.plot_kendrick_cluster_mz import plot_kendrick_from_clustering
 
