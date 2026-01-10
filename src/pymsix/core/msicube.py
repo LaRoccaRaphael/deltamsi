@@ -1193,7 +1193,7 @@ class MSICube:
                 idx = np.where(m)[0]
                 if idx.size == 0:
                     continue
-                block = np.asarray(X_out[idx, :], dtype=np.float32, copy=False)
+                block = np.array(X_out[idx, :], dtype=np.float32, copy=False)
                 mean, std = _scale_dense_block(block)
                 stats[g] = (mean, std)
                 X_out[idx, :] = block
