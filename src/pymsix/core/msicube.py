@@ -3137,6 +3137,10 @@ class MSICube:
             Whether to plot Observed m/z or Kendrick Mass on the X-axis.
             * **point_size** : *float, default 10.0*
             Size of the markers in the scatter plot.
+            * **label_col** : *str, optional*
+            Column in ``adata.var`` used to color the family/label panel.
+            When ``two_panels=False``, the plot uses this column for the single
+            panel coloring.
             * **top_k_clusters** : *int, default 10*
             Only color the K largest clusters to maintain visual clarity.
             * **two_panels** : *bool, default False*
@@ -3215,18 +3219,28 @@ class MSICube:
 
         # Optional family/label retrieval
         family = None
-        if "family" in self.adata.var.columns:
+        if options.label_col is not None:
+            if options.label_col not in self.adata.var.columns:
+                raise ValueError(
+                    f"Column '{options.label_col}' is missing from adata.var."
+                )
+            family = self.adata.var[options.label_col].values
+        elif "family" in self.adata.var.columns:
             family = self.adata.var["family"].values
         elif "label" in self.adata.var.columns:
             family = self.adata.var["label"].values
 
         # 3. Call rendering function
+        primary_color_by = (
+            "family" if options.label_col is not None and not options.two_panels else "cluster"
+        )
         return plot_kendrick_from_clustering(
             masses=masses,
             clustering_result=clustering_result,
             adata=self.adata,
             kendrick_varm_key=options.kendrick_varm_key,
             family=family,
+            primary_color_by=primary_color_by,
             base=options.base,
             mass_col=options.mass_col,
             x_axis=options.x_axis,

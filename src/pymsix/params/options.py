@@ -466,6 +466,9 @@ class KendrickPlotOptions:
         The formula (e.g., "CH2", "H2O") or exact mass used as the Kendrick base.
     mass_col : str, default "mz"
         The column in the data containing the m/z values to transform.
+    label_col : str, optional
+        Column in ``adata.var`` used to color the family/label panel. If None,
+        falls back to the default lookup (``family`` then ``label``).
     kendrick_varm_key : str, optional
         Key to store/retrieve the calculated Kendrick values in the object's metadata.
     x_axis : {"kendrick_mass", "m_over_z"}, default "kendrick_mass"
@@ -512,6 +515,7 @@ class KendrickPlotOptions:
 
     base: Union[str, float, Tuple[float, float]] = "CH2"
     mass_col: str = "mz"
+    label_col: Optional[str] = None
     kendrick_varm_key: Optional[str] = None
 
 
