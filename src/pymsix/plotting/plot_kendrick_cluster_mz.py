@@ -226,6 +226,7 @@ def plot_kendrick_from_clustering(
     adata: ad.AnnData,
     kendrick_varm_key: Optional[str] = None,
     family: Optional[Sequence[object]] = None,
+    primary_color_by: str = "cluster",
     base: str | float | Tuple[float, float] = "CH2",
     mass_col: str = "exact_molecular_weight",
     # axes & style
@@ -268,6 +269,10 @@ def plot_kendrick_from_clustering(
     family : sequence of object, optional
         Labels for a second panel (e.g., compound classes). Only used if 
         `two_panels` is True.
+    primary_color_by : {"cluster", "family"}, default "cluster"
+        Which column to use for coloring the primary panel when rendering a
+        single plot (``two_panels=False``). Requires ``family`` data when set
+        to ``"family"``.
     base : str, float or tuple, default "CH2"
         The Kendrick base for the X-axis scaling.
     mass_col : str, default "exact_molecular_weight"
@@ -380,6 +385,11 @@ def plot_kendrick_from_clustering(
         rng = np.random.default_rng(0)
         x = x + rng.normal(0.0, float(jitter), size=len(x))
 
+    if primary_color_by not in {"cluster", "family"}:
+        raise ValueError("primary_color_by must be 'cluster' or 'family'")
+    if primary_color_by == "family" and "family" not in df.columns:
+        raise ValueError("primary_color_by='family' requires family labels.")
+
     # Set up figure(s)
     if two_panels and ("family" in df.columns):
         fig, axes = plt.subplots(1, 2, figsize=figsize, dpi=140, sharey=True)
@@ -394,31 +404,63 @@ def plot_kendrick_from_clustering(
         cmap(i / max(1, cmap.N - 1)) for i in range(cmap.N)
     ]
 
-    # ---- Panel A: color by cluster ----
+    # ---- Panel A: color by cluster or family ----
     df["_x"] = x
     df["_y"] = y
-    groups = sorted(df["cluster"].astype(int).unique())
-    color_map = {g: palette[i % len(palette)] for i, g in enumerate(groups)}
-
-    for g in groups:
-        gd = df[df["cluster"].astype(int) == g]
-        ax1.scatter(
-            gd["_x"],
-            gd["_y"],
-            s=point_size,
-            alpha=alpha,
-            color=color_map[g],
-            label=str(g),
+    if primary_color_by == "family":
+        groups = sorted(df["family"].astype(str).unique())
+        color_map = {g: palette[i % len(palette)] for i, g in enumerate(groups)}
+        for g in groups:
+            gd = df[df["family"].astype(str) == g]
+            ax1.scatter(
+                gd["_x"],
+                gd["_y"],
+                s=point_size,
+                alpha=alpha,
+                color=color_map[g],
+                label=str(g),
+            )
+            if annotate and max_ann_per_group > 0:
+                for idx in gd.head(max_ann_per_group).index:
+                    ax1.annotate(
+                        str(idx),
+                        (gd.loc[idx, "_x"], gd.loc[idx, "_y"]),
+                        fontsize=8,
+                        alpha=0.8,
+                    )
+        ax1.set_title("Kendrick by FAMILY")
+        ax1.legend(
+            title="family", bbox_to_anchor=(1.02, 1.0), loc="upper left", frameon=False
         )
-        if annotate and max_ann_per_group > 0:
-            # annotate first N points of each group (by row order)
-            for idx in gd.head(max_ann_per_group).index:
-                ax1.annotate(
-                    str(idx),
-                    (gd.loc[idx, "_x"], gd.loc[idx, "_y"]),
-                    fontsize=8,
-                    alpha=0.8,
-                )
+    else:
+        groups = sorted(df["cluster"].astype(int).unique())
+        color_map = {g: palette[i % len(palette)] for i, g in enumerate(groups)}
+        for g in groups:
+            gd = df[df["cluster"].astype(int) == g]
+            ax1.scatter(
+                gd["_x"],
+                gd["_y"],
+                s=point_size,
+                alpha=alpha,
+                color=color_map[g],
+                label=str(g),
+            )
+            if annotate and max_ann_per_group > 0:
+                # annotate first N points of each group (by row order)
+                for idx in gd.head(max_ann_per_group).index:
+                    ax1.annotate(
+                        str(idx),
+                        (gd.loc[idx, "_x"], gd.loc[idx, "_y"]),
+                        fontsize=8,
+                        alpha=0.8,
+                    )
+        ax1.set_title("Kendrick by CLUSTER")
+        ax1.legend(
+            title="cluster",
+            bbox_to_anchor=(1.02, 1.0),
+            loc="upper left",
+            frameon=False,
+        )
 
     # grid lines for KMD
     if kmd_mode == "fraction":
@@ -437,11 +479,7 @@ def plot_kendrick_from_clustering(
         "Kendrick mass (base {})".format(base) if x_axis == "kendrick_mass" else "mz"
     )
     ax1.set_ylabel("KMD ({})".format(kmd_mode))
-    ax1.set_title("Kendrick by CLUSTER")
     ax1.grid(True, ls=":", alpha=0.25)
-    ax1.legend(
-        title="cluster", bbox_to_anchor=(1.02, 1.0), loc="upper left", frameon=False
-    )
 
     # ---- Panel B: color by family (optional) ----
     if len(axes) == 2:
