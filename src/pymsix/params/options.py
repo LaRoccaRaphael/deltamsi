@@ -446,6 +446,8 @@ class MassClusteringOptions:
             raise ValueError("knn_mode must be 'union' or 'mutual'.")
         if self.method == "colocalization" and self.coloc_varp_key is None:
             raise ValueError("coloc_varp_key must be provided for colocalization mode.")
+        if self.output_col is None:
+            self.output_col = "mass_cluster"
         if not self.output_col:
             raise ValueError("output_col must be a non-empty string.")
 
