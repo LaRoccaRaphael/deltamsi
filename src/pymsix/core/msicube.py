@@ -81,6 +81,7 @@ from pymsix.processing.mass_clustering import (
     cluster_masses_with_candidates,
 )
 from pymsix.processing.kendrick import compute_kendrick_varm
+from pymsix.processing.mass_neighbors import direct_mass_neighbors
 from pymsix.plotting.plot_kendrick_cluster_mz import plot_kendrick_from_clustering
 
 from pymsix.params.options import (
@@ -3081,6 +3082,37 @@ class MSICube:
             varm_key=varm_key,
             store_1d_in_var=store_1d_in_var,
             var_prefix=var_prefix,
+        )
+
+    def direct_mass_neighbors(
+        self,
+        mz_id: Union[int, str],
+        *,
+        mass_uns_key: str = "mass_clustering",
+        edges_key: str = "edges",
+        cosine_key: str = "ion_cosine",
+        var_cols: Optional[Sequence[str]] = None,
+        edge_cols: Optional[Sequence[str]] = None,
+        include_src_cols: bool = False,
+    ) -> pd.DataFrame:
+        """
+        Return direct neighbors (distance=1) of mz_id in the mass-difference network.
+
+        Output: one row per edge incident to src, containing neighbor + edge info
+        + cosine(src, nbr).
+        """
+        if self.adata is None:
+            raise ValueError("AnnData object is empty. Load or compute data first.")
+
+        return direct_mass_neighbors(
+            self.adata,
+            mz_id,
+            mass_uns_key=mass_uns_key,
+            edges_key=edges_key,
+            cosine_key=cosine_key,
+            var_cols=var_cols,
+            edge_cols=edge_cols,
+            include_src_cols=include_src_cols,
         )
 
     def manual_label_kendrick(
