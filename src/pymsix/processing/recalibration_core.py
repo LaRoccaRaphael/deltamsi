@@ -10,47 +10,12 @@ using Kernel Density Estimation (KDE) to find the most probable mass error
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Optional, Tuple, Any
 
 import numpy as np
 from scipy.stats import gaussian_kde
 
-
-@dataclass(frozen=True)
-class RecalParams:
-    """
-    Parameter container for recalibration logic.
-
-    Attributes
-    ----------
-    tol_da : float
-        Search tolerance in Daltons.
-    tol_ppm : float, optional
-        Search tolerance in ppm. If set, it overrides `tol_da`.
-    kde_bw_da : float
-        Bandwidth for the KDE (smoothing factor).
-    roi_halfwidth_da : float
-        The window size around the detected mode to keep hits for RANSAC.
-    n_peaks : int
-        Number of highest-intensity peaks to consider per pixel.
-    min_hits_for_fit : int
-        Minimum number of database matches required to attempt a fit.
-    """
-    # Matching tolerance (choose one)
-    tol_da: float = 0.03  # used if tol_ppm is None
-    tol_ppm: Optional[float] = None  # if set, per-peak tol_da = mz * tol_ppm * 1e-6
-
-    # KDE / ROI (in Da)
-    kde_bw_da: float = 0.002
-    roi_halfwidth_da: float = 0.02
-    kde_grid_step_da: float = 1e-4
-
-    # Peak selection + fit
-    n_peaks: int = 1000
-    min_hits_for_fit: int = 20
-    ransac_max_trials: int = 300
-    ransac_min_samples: int = 10
+from pymsix.params.options import RecalParams
 
 
 def load_database_masses(path: str) -> np.ndarray:

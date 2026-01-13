@@ -59,19 +59,13 @@ from pymsix.processing.combine_mean_spectra import combine_mean_spectra, Spectru
 from pymsix.processing.peak_picking import peak_picking, extract_peak_matrix
 from pymsix.processing.aggregation import aggregate_vars_by_label, Agg
 from pymsix.processing.normalization import tic_normalize_msicube
-from pymsix.processing.colocalization import (
-    CosineColocParams,
-    compute_mz_cosine_colocalization,
-)
+from pymsix.processing.colocalization import compute_mz_cosine_colocalization
 from pymsix.processing.spatial_chaos import (
     compute_spatial_chaos_matrix,
     spatial_chaos_fold_change_from_adata,
 )
 
-from pymsix.processing.recalibration_core import (
-    load_database_masses,
-    RecalParams,
-)
+from pymsix.processing.recalibration_core import load_database_masses
 
 from pymsix.processing.recalibration_cli_clean import write_corrected_msi
 from pymsix.processing.recal_visu_clean import diagnostics_for_pixel, select_pixels
@@ -82,10 +76,7 @@ from pymsix.processing.mass_clustering import (
 )
 from pymsix.processing.kendrick import compute_kendrick_varm
 from pymsix.processing.mass_neighbors import direct_mass_neighbors
-from pymsix.processing.discriminant_analysis import (
-    RankIonsMSIParams,
-    rank_ions_groups_msi,
-)
+from pymsix.processing.discriminant_analysis import rank_ions_groups_msi
 from pymsix.processing.mz_matching import (
     match_mzs_to_var_simple as match_mzs_to_var_simple_processing,
 )
@@ -99,6 +90,9 @@ from pymsix.params.options import (
     RecalibrationOptions,
     MassClusteringOptions,
     KendrickPlotOptions,
+    CosineColocParams,
+    RecalParams,
+    RankIonsMSIParams,
 )
 
 
@@ -827,7 +821,7 @@ class MSICube:
 
         **2. Full customization via CosineColocParams**
         
-        >>> from msicube import CosineColocParams
+        >>> from pymsix.params import CosineColocParams
         >>> # Define specific parameters for a large dataset
         >>> custom_config = CosineColocParams(
         ...     mode="topk_sparse",

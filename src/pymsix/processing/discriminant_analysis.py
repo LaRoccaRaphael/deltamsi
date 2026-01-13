@@ -16,14 +16,15 @@ The analysis automatically adapts to your experimental design:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, List, Literal, Optional, Tuple
+from typing import Any, Literal, Optional, Tuple
 
 import anndata as ad
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 from scipy import stats
+
+from pymsix.params.options import RankIonsMSIParams
 
 __all__ = ["RankIonsMSIParams", "rank_ions_groups_msi"]
 
@@ -242,85 +243,6 @@ def _infer_blocks(
 # ---------------------------
 # Main API
 # ---------------------------
-@dataclass
-class RankIonsMSIParams:
-    """
-    Parameters for the ranking of ions between groups.
-
-    Attributes
-    ----------
-    condition_key : str, default "condition"
-        Column in ``adata.obs`` containing the experimental groups/conditions.
-    sample_key : str, default "sample"
-        Column in ``adata.obs`` identifying individual biological replicates.
-    group : str, default "treated"
-        The name of the condition to test (the "numerator").
-    reference : str, default "control"
-        The name of the condition to use as a baseline (the "denominator").
-    layer : str, optional
-        The AnnData layer to use for intensity values. If None, uses ``adata.X``.
-    detection_threshold : float, default 0.0
-        Intensity value above which an ion is considered "detected".
-    pseudocount : float, default 1e-9
-        Constant added to denominators to avoid division by zero in log2FC.
-    agg : {"mean", "median"}, default "mean"
-        Method to summarize pixels into sample-level pseudobulk values.
-    method : {"auto", "ttest", "wilcoxon"}, default "auto"
-        Statistical test to perform when replicates are available.
-    direction : {"up", "abs"}, default "up"
-        "up" focuses on ions overexpressed in `group`. "abs" ranks by absolute fold change.
-    n_top : int, default 200
-        Number of top ions to return in the summary table.
-    compute_auc : bool, default True
-        Whether to calculate the Area Under the Curve (Receiver Operating Characteristic).
-    block_bootstrap : bool, default False
-        Whether to use spatial block bootstrapping to estimate confidence 
-        intervals for single-sample comparisons.
-    block_size : int, default 25
-        Side length of the square spatial blocks (in pixels) for bootstrapping.
-    key_added : str, default "rank_ions_groups_msi"
-        Key under which results are stored in ``adata.uns``.
-    """
-    condition_key: str = "condition"
-    sample_key: str = "sample"
-    group: str = "treated"  # user-selected
-    reference: str = "control"  # user-selected
-
-    layer: Optional[str] = None
-
-    # effect sizes
-    detection_threshold: float = 0.0
-    pseudocount: float = 1e-9
-    agg: Literal["mean", "median"] = "mean"  # for pseudobulk per sample; median requires dense
-
-    # statistics (only when replicated)
-    method: Literal["auto", "ttest", "wilcoxon"] = "auto"
-
-    # ranking
-    direction: Literal["up", "abs"] = "up"  # 'up' ranks overexpressed in group; 'abs' ranks by |logFC|
-    n_top: int = 200
-
-    # speed controls
-    compute_auc: bool = True
-    auc_on: Literal["auto", "samples", "pixels"] = "auto"
-    auc_max_ions: int = 3000  # compute AUC only for top K by ranking score
-    auc_max_pixels_per_group: int = 50000  # subsample pixels for AUC when using pixel-level
-
-    # single-sample uncertainty (optional)
-    block_bootstrap: bool = False
-    block_size: int = 25
-    n_boot: int = 200
-    ci_alpha: float = 0.05
-    ci_max_ions: int = 1000  # compute CI only for top K ions
-    x_key: str = "x"
-    y_key: str = "y"
-    spatial_key: str = "spatial"
-
-    # output
-    key_added: str = "rank_ions_groups_msi"
-    random_state: int = 0
-
-
 def rank_ions_groups_msi(adata: ad.AnnData, *, params: RankIonsMSIParams) -> pd.DataFrame:
     """
     Rank ions by differential expression between two groups of MSI data.
@@ -360,7 +282,8 @@ def rank_ions_groups_msi(adata: ad.AnnData, *, params: RankIonsMSIParams) -> pd.
 
     Examples
     --------
-    >>> from pymsix.processing.discriminant import rank_ions_groups_msi, RankIonsMSIParams
+    >>> from pymsix.params import RankIonsMSIParams
+    >>> from pymsix.processing.discriminant import rank_ions_groups_msi
     >>> # Define comparison between Treated and Control
     >>> p = RankIonsMSIParams(
     ...     condition_key="group", 

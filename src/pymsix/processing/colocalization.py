@@ -15,55 +15,15 @@ which is a crucial step for adduct identification and molecular family grouping.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Literal, Optional, Tuple, Union, TYPE_CHECKING
+from typing import Optional, Tuple, Union, TYPE_CHECKING
 
 import numpy as np
 import scipy.sparse as sp
 
+from pymsix.params.options import CosineColocParams
+
 if TYPE_CHECKING:  # pragma: no cover
     from pymsix.core.msicube import MSICube
-
-
-@dataclass
-class CosineColocParams:
-    """
-    Parameters controlling cosine-based ion colocalization computation.
-
-    Attributes
-    ----------
-    layer : str, optional
-        Name of the ``adata.layers`` entry to use. If None, uses ``adata.X``.
-    dtype : Union[np.dtype, str], default "float32"
-        Numerical precision for the computation and the resulting matrix.
-    mode : {"dense", "topk_sparse"}, default "topk_sparse"
-        Computation and storage strategy. Use ``"topk_sparse"`` for large 
-        datasets to avoid memory overflow.
-    topk : int, default 50
-        Only keep the top K most similar ions for each variable in 
-        sparse mode.
-    min_sim : float, default 0.2
-        Similarity threshold. Values below this are treated as zero in 
-        sparse mode.
-    chunk_size : int, default 256
-        Number of variables to process at once during block-wise sparse 
-        computation.
-    symmetrize : bool, default True
-        Ensure the output matrix is symmetric ($S_{ij} = S_{ji}$).
-    include_self : bool, default False
-        Whether to keep the diagonal (self-similarity of 1.0) in the matrix.
-    store_varp_key : str, optional, default "ion_cosine"
-        Key used to store the resulting matrix in ``adata.varp``.
-    """
-    layer: Optional[str] = None
-    dtype: Union[np.dtype, str] = "float32"
-    mode: Literal["dense", "topk_sparse"] = "topk_sparse"
-    topk: int = 50
-    min_sim: float = 0.2
-    chunk_size: int = 256
-    symmetrize: bool = True
-    include_self: bool = False
-    store_varp_key: Optional[str] = "ion_cosine"
 
 
 def _get_X(msicube: "MSICube", layer: Optional[str]) -> Union[np.ndarray, sp.spmatrix]:
@@ -335,7 +295,8 @@ def compute_mz_cosine_colocalization(
 
     Examples
     --------
-    >>> from pymsix.processing.colocalization import compute_mz_cosine_colocalization, CosineColocParams
+    >>> from pymsix.params import CosineColocParams
+    >>> from pymsix.processing.colocalization import compute_mz_cosine_colocalization
     >>> # Standard sparse computation keeping only top 10 neighbors
     >>> params = CosineColocParams(topk=10, min_sim=0.3)
     >>> sim_matrix = compute_mz_cosine_colocalization(msicube, params=params)
@@ -387,4 +348,3 @@ def compute_mz_cosine_colocalization(
         }
 
     return S
-

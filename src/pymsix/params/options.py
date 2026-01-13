@@ -52,6 +52,8 @@ Examples
 from dataclasses import dataclass, field
 from typing import Optional, Literal, Dict, Any, Tuple, Union, Callable, List
 
+import numpy as np
+
 __all__ = [
     "MeanSpectrumOptions",
     "GlobalMeanSpectrumOptions",
@@ -60,6 +62,12 @@ __all__ = [
     "RecalibrationOptions",
     "MassClusteringOptions",
     "KendrickPlotOptions",
+    "RecalParams",
+    "CosineColocParams",
+    "MSIHotspotCapParams",
+    "MSIThresholdParams",
+    "MSIMedianFilterParams",
+    "RankIonsMSIParams",
 ]
 
 
@@ -559,3 +567,273 @@ class KendrickPlotOptions:
             raise ValueError(f"kmd_mode invalide: {self.kmd_mode}")
         if self.top_k_clusters is not None and self.top_k_clusters < 1:
             self.top_k_clusters = None
+
+
+@dataclass(frozen=True)
+class RecalParams:
+    """
+    Parameter container for recalibration logic.
+
+    Attributes
+    ----------
+    tol_da : float
+        Search tolerance in Daltons.
+    tol_ppm : float, optional
+        Search tolerance in ppm. If set, it overrides `tol_da`.
+    kde_bw_da : float
+        Bandwidth for the KDE (smoothing factor).
+    roi_halfwidth_da : float
+        The window size around the detected mode to keep hits for RANSAC.
+    n_peaks : int
+        Number of highest-intensity peaks to consider per pixel.
+    min_hits_for_fit : int
+        Minimum number of database matches required to attempt a fit.
+    """
+
+    __module__ = "pymsix.params"
+
+    # Matching tolerance (choose one)
+    tol_da: float = 0.03  # used if tol_ppm is None
+    tol_ppm: Optional[float] = None  # if set, per-peak tol_da = mz * tol_ppm * 1e-6
+
+    # KDE / ROI (in Da)
+    kde_bw_da: float = 0.002
+    roi_halfwidth_da: float = 0.02
+    kde_grid_step_da: float = 1e-4
+
+    # Peak selection + fit
+    n_peaks: int = 1000
+    min_hits_for_fit: int = 20
+    ransac_max_trials: int = 300
+    ransac_min_samples: int = 10
+
+
+@dataclass
+class CosineColocParams:
+    """
+    Parameters controlling cosine-based ion colocalization computation.
+
+    Attributes
+    ----------
+    layer : str, optional
+        Name of the ``adata.layers`` entry to use. If None, uses ``adata.X``.
+    dtype : Union[np.dtype, str], default "float32"
+        Numerical precision for the computation and the resulting matrix.
+    mode : {"dense", "topk_sparse"}, default "topk_sparse"
+        Computation and storage strategy. Use ``"topk_sparse"`` for large
+        datasets to avoid memory overflow.
+    topk : int, default 50
+        Only keep the top K most similar ions for each variable in
+        sparse mode.
+    min_sim : float, default 0.2
+        Similarity threshold. Values below this are treated as zero in
+        sparse mode.
+    chunk_size : int, default 256
+        Number of variables to process at once during block-wise sparse
+        computation.
+    symmetrize : bool, default True
+        Ensure the output matrix is symmetric ($S_{ij} = S_{ji}$).
+    include_self : bool, default False
+        Whether to keep the diagonal (self-similarity of 1.0) in the matrix.
+    store_varp_key : str, optional, default "ion_cosine"
+        Key used to store the resulting matrix in ``adata.varp``.
+    """
+
+    __module__ = "pymsix.params"
+
+    layer: Optional[str] = None
+    dtype: Union[np.dtype, str] = "float32"
+    mode: Literal["dense", "topk_sparse"] = "topk_sparse"
+    topk: int = 50
+    min_sim: float = 0.2
+    chunk_size: int = 256
+    symmetrize: bool = True
+    include_self: bool = False
+    store_varp_key: Optional[str] = "ion_cosine"
+
+
+@dataclass
+class MSIHotspotCapParams:
+    """
+    Parameters for hotspot capping.
+
+    Attributes
+    ----------
+    q : float, default 0.99
+        Quantile threshold (0.0 to 1.0). Intensities above this value
+        will be clipped to the quantile value.
+    layer_in : str, optional
+        The AnnData layer to process. If None, uses ``adata.X``.
+    layer_out : str, optional
+        The layer to store results. If None, overwrites the input.
+    chunk_size : int, default 256
+        Number of ion images to process simultaneously to optimize memory.
+    dtype : str or np.dtype, default "float32"
+        The numerical precision for processing.
+    """
+
+    __module__ = "pymsix.params"
+
+    q: float = 0.99
+    layer_in: Optional[str] = None
+    layer_out: Optional[str] = None
+    chunk_size: int = 256
+    dtype: Union[str, np.dtype] = "float32"
+
+
+@dataclass
+class MSIThresholdParams:
+    """
+    Parameters for per-ion quantile thresholding.
+
+    Attributes
+    ----------
+    q : float, default 0.5
+        The quantile below which intensities are removed.
+    mode : {"zero", "nan"}, default "zero"
+        Whether to set values below threshold to 0.0 or NaN.
+    layer_in : str, optional
+        Input layer in AnnData.
+    layer_out : str, optional
+        Output layer in AnnData.
+    chunk_size : int, default 256
+        Number of variables processed in a single block.
+    """
+
+    __module__ = "pymsix.params"
+
+    q: float = 0.5
+    mode: Literal["zero", "nan"] = "zero"
+    layer_in: Optional[str] = None
+    layer_out: Optional[str] = None
+    chunk_size: int = 256
+    dtype: Union[str, np.dtype] = "float32"
+
+
+@dataclass
+class MSIMedianFilterParams:
+    """
+    Parameters for applying a 2D median filter to ion images.
+
+    Attributes
+    ----------
+    size : int, default 3
+        The side length of the square median window (e.g., 3 for 3x3).
+    layer_in : str, optional
+        Source layer name.
+    layer_out : str, optional
+        Destination layer name.
+    x_key, y_key : str
+        Metadata keys for pixel coordinates.
+    spatial_key : str
+        Key for the spatial coordinate matrix in ``obsm``.
+    shape : tuple, optional
+        Explicit (Height, Width) for the spatial grid.
+    origin : {"min", "zero"}
+        Whether to offset coordinates to (0,0).
+    fill_value : float, default 0.0
+        Value used for pixels with no data in a non-rectangular grid.
+    nan_to_num_before : bool, default True
+        If True, replaces NaN values with `fill_value` before filtering.
+    chunk_size : int, default 64
+        Number of images processed per block. Keep low for large spatial grids.
+    """
+
+    __module__ = "pymsix.params"
+
+    size: int = 3
+    layer_in: Optional[str] = None
+    layer_out: Optional[str] = None
+    dtype: Union[str, np.dtype] = "float32"
+
+    x_key: str = "x"
+    y_key: str = "y"
+    spatial_key: str = "spatial"
+    shape: Optional[Tuple[int, int]] = None
+    origin: Literal["min", "zero"] = "min"
+
+    fill_value: float = 0.0
+    nan_to_num_before: bool = True
+    chunk_size: int = 64
+
+
+@dataclass
+class RankIonsMSIParams:
+    """
+    Parameters for the ranking of ions between groups.
+
+    Attributes
+    ----------
+    condition_key : str, default "condition"
+        Column in ``adata.obs`` containing the experimental groups/conditions.
+    sample_key : str, default "sample"
+        Column in ``adata.obs`` identifying individual biological replicates.
+    group : str, default "treated"
+        The name of the condition to test (the "numerator").
+    reference : str, default "control"
+        The name of the condition to use as a baseline (the "denominator").
+    layer : str, optional
+        The AnnData layer to use for intensity values. If None, uses ``adata.X``.
+    detection_threshold : float, default 0.0
+        Intensity value above which an ion is considered "detected".
+    pseudocount : float, default 1e-9
+        Constant added to denominators to avoid division by zero in log2FC.
+    agg : {"mean", "median"}, default "mean"
+        Method to summarize pixels into sample-level pseudobulk values.
+    method : {"auto", "ttest", "wilcoxon"}, default "auto"
+        Statistical test to perform when replicates are available.
+    direction : {"up", "abs"}, default "up"
+        "up" focuses on ions overexpressed in `group`. "abs" ranks by absolute fold change.
+    n_top : int, default 200
+        Number of top ions to return in the summary table.
+    compute_auc : bool, default True
+        Whether to calculate the Area Under the Curve (Receiver Operating Characteristic).
+    block_bootstrap : bool, default False
+        Whether to use spatial block bootstrapping to estimate confidence
+        intervals for single-sample comparisons.
+    block_size : int, default 25
+        Side length of the square spatial blocks (in pixels) for bootstrapping.
+    key_added : str, default "rank_ions_groups_msi"
+        Key under which results are stored in ``adata.uns``.
+    """
+
+    __module__ = "pymsix.params"
+
+    condition_key: str = "condition"
+    sample_key: str = "sample"
+    group: str = "treated"  # user-selected
+    reference: str = "control"  # user-selected
+
+    layer: Optional[str] = None
+
+    # effect sizes
+    detection_threshold: float = 0.0
+    pseudocount: float = 1e-9
+    agg: Literal["mean", "median"] = "mean"  # for pseudobulk per sample; median requires dense
+
+    # statistics (only when replicated)
+    method: Literal["auto", "ttest", "wilcoxon"] = "auto"
+
+    # ranking
+    direction: Literal["up", "abs"] = "up"  # 'up' ranks overexpressed in group; 'abs' ranks by |logFC|
+    n_top: int = 200
+
+    # speed controls
+    compute_auc: bool = True
+    auc_on: Literal["auto", "samples", "pixels"] = "auto"
+    auc_max_ions: int = 3000  # compute AUC only for top K by ranking score
+    auc_max_pixels_per_group: int = 50000  # subsample pixels for AUC when using pixel-level
+
+    # single-sample uncertainty (optional)
+    block_bootstrap: bool = False
+    block_size: int = 25
+    n_boot: int = 200
+    ci_alpha: float = 0.05
+    ci_max_ions: int = 1000  # compute CI only for top K ions
+    x_key: str = "x"
+    y_key: str = "y"
+    spatial_key: str = "spatial"
+
+    # output
+    key_added: str = "rank_ions_groups_msi"
+    random_state: int = 0
