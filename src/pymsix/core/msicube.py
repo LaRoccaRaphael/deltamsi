@@ -34,10 +34,6 @@ Logger
 MSICube
     Primary interface for MSI data analysis and pipeline management.
 
-Functions
----------
-_log1p_inplace_or_copy
-    Matrix-aware logarithmic transformation helper.
 """
 
 from concurrent.futures import ProcessPoolExecutor
@@ -58,7 +54,16 @@ from pymsix.processing.mean_spectrum import compute_mean_spectrum
 from pymsix.processing.combine_mean_spectra import combine_mean_spectra, Spectrum
 from pymsix.processing.peak_picking import peak_picking, extract_peak_matrix
 from pymsix.processing.aggregation import aggregate_vars_by_label, Agg
-from pymsix.processing.normalization import tic_normalize_msicube
+from pymsix.processing.normalization import (
+    HighAction,
+    LowAction,
+    ScaleMode,
+    ScaleStats,
+    clip_or_mask_intensities as clip_or_mask_intensities_processing,
+    log1p_intensity as log1p_intensity_processing,
+    scale_ion_images_zscore as scale_ion_images_zscore_processing,
+    tic_normalize_msicube,
+)
 from pymsix.processing.colocalization import compute_mz_cosine_colocalization
 from pymsix.processing.spatial_chaos import (
     compute_spatial_chaos_matrix,
@@ -108,48 +113,6 @@ class Logger:
 
 
 logger = Logger()
-
-
-ScaleMode = Literal["all", "per_sample", "per_condition"]
-ScaleStats = Dict[Any, Tuple[np.ndarray, np.ndarray]]
-LowAction = Literal["keep", "nan", "zero", "clip"]
-HighAction = Literal["keep", "nan", "clip"]
-def _log1p_inplace_or_copy(X: Any, *, base: Optional[float] = None) -> Any:
-    """
-    Apply ``log1p`` to a dense or sparse matrix, mirroring Scanpy's behavior.
-
-    Sparse matrices are copied before mutation to maintain integrity; 
-    dense inputs are modified in-place to optimize memory usage.
-
-    Parameters
-    ----------
-    X : array_like or sparse matrix
-        The input intensity matrix.
-    base : float, optional
-        If provided, the result is scaled to this logarithmic base 
-        (e.g., base=10 for log10).
-
-    Returns
-    -------
-    X_out : same type as X
-        The transformed matrix.
-    """
-
-    if sp.issparse(X):
-        X = X.copy()
-        X.data = np.log1p(X.data)
-        if base is not None:
-            X.data /= np.log(base)
-        return X
-
-    X_arr = np.asarray(X)
-    if not np.issubdtype(X_arr.dtype, np.floating):
-        X_arr = X_arr.astype(np.float32, copy=False)
-
-    np.log1p(X_arr, out=X_arr)
-    if base is not None:
-        X_arr /= np.log(base)
-    return X_arr
 
 
 class MSICube:
@@ -520,95 +483,16 @@ class MSICube:
         ...     copy=True
         ... )
         """
-
-        if self.adata is None:
-            raise ValueError("MSICube.adata is None. Run data extraction first.")
-
-        obj = self.adata.copy() if copy else self.adata
-
-        if layer is None:
-            X = obj.X
-        else:
-            if layer not in obj.layers:
-                raise KeyError(f"Layer '{layer}' not found in adata.layers.")
-            X = obj.layers[layer]
-
-        if low is None and high is None:
-            return obj if copy else None
-
-        if sp.issparse(X):
-            X_out = X.astype(np.float32, copy=True)
-            data = X_out.data
-
-            if low_action == "move":
-                if low is None:
-                    raise ValueError("low must be set when low_action='move'")
-                np.subtract(data, low, out=data)
-                data[data < 0] = 0.0
-            elif low is not None and low_action != "keep":
-                mask = data < low
-                if low_action == "nan":
-                    data[mask] = np.nan
-                elif low_action == "zero":
-                    data[mask] = 0.0
-                elif low_action == "clip":
-                    data[mask] = low
-
-            if high is not None and high_action != "keep":
-                mask = data > high
-                if high_action == "nan":
-                    data[mask] = np.nan
-                elif high_action == "clip":
-                    data[mask] = high
-
-            X_out.data = data
-            if low_action in {"zero", "move"}:
-                X_out.eliminate_zeros()
-
-        else:
-            X_arr = np.asarray(X, dtype=np.float32).copy()
-
-            if low_action == "move":
-                if low is None:
-                    raise ValueError("low must be set when low_action='move'")
-                np.subtract(X_arr, low, out=X_arr)
-                X_arr[X_arr < 0] = 0.0
-            elif low is not None and low_action != "keep":
-                if low_action == "nan":
-                    X_arr[X_arr < low] = np.nan
-                elif low_action == "zero":
-                    X_arr[X_arr < low] = 0.0
-                elif low_action == "clip":
-                    X_arr[X_arr < low] = low
-
-            if high is not None and high_action != "keep":
-                if high_action == "nan":
-                    X_arr[X_arr > high] = np.nan
-                elif high_action == "clip":
-                    X_arr[X_arr > high] = high
-
-            X_out = X_arr
-
-        if result_layer is None and layer is None:
-            obj.X = X_out
-        elif result_layer is None and layer is not None:
-            obj.layers[layer] = X_out
-        else:
-            obj.layers[result_layer] = X_out
-
-        obj.uns.setdefault("intensity_clipping", [])
-        obj.uns["intensity_clipping"].append(
-            {
-                "layer": layer,
-                "result_layer": result_layer,
-                "low": None if low is None else float(low),
-                "high": None if high is None else float(high),
-                "low_action": low_action,
-                "high_action": high_action,
-            }
+        return clip_or_mask_intensities_processing(
+            self,
+            low=low,
+            high=high,
+            low_action=low_action,
+            high_action=high_action,
+            layer=layer,
+            result_layer=result_layer,
+            copy=copy,
         )
-
-        return obj if copy else None
 
     @classmethod
     def from_saved_adata(
@@ -743,31 +627,7 @@ class MSICube:
         >>> new_cube = cube.log1p_intensity(base=2.0, layer="raw", copy=True)
         >>> # The original 'cube' remains unchanged.
         """
-
-        if self.adata is None:
-            raise ValueError("MSICube.adata is None. Run data extraction first.")
-
-        target_cube = MSICube(self.data_directory) if copy else self
-        target_cube.org_imzml_path_dict = self.org_imzml_path_dict.copy()
-        target_cube.adata = self.adata.copy() if copy else self.adata
-
-        adata_obj = target_cube.adata
-
-        if layer is None:
-            if adata_obj.X is None:
-                raise ValueError("MSICube.adata.X is None.")
-            adata_obj.X = _log1p_inplace_or_copy(adata_obj.X, base=base)
-        else:
-            if layer not in adata_obj.layers:
-                raise KeyError(f"Layer '{layer}' not found in adata.layers")
-            adata_obj.layers[layer] = _log1p_inplace_or_copy(
-                adata_obj.layers[layer], base=base
-            )
-
-        adata_obj.uns.setdefault("log1p", {})
-        adata_obj.uns["log1p"]["base"] = base
-
-        return target_cube if copy else None
+        return log1p_intensity_processing(self, base=base, layer=layer, copy=copy)
 
     def compute_cosine_colocalization(
         self, *, params: CosineColocParams = CosineColocParams()
@@ -1830,136 +1690,19 @@ class MSICube:
         >>> # Get mean of the first m/z for 'sample_A'
         >>> mean_val = stats['sample_A'][0][0]
         """
-
-        if self.adata is None:
-            raise ValueError(
-                "MSICube.adata is None. Run data extraction before scaling ion images."
-            )
-
-        obj = self.adata.copy() if copy else self.adata
-
-        if layer is None:
-            X = obj.X
-        else:
-            if layer not in obj.layers:
-                raise KeyError(f"Layer '{layer}' not found in adata.layers.")
-            X = obj.layers[layer]
-
-        if X is None:
-            raise ValueError("No ion image data found to scale (adata.X is None).")
-
-        if mode == "all":
-            groups = {None: np.ones(obj.n_obs, dtype=bool)}
-            group_key: Optional[str] = None
-        elif mode == "per_sample":
-            group_key = "sample"
-            if group_key not in obj.obs:
-                raise KeyError("mode='per_sample' requires adata.obs['sample']")
-            vals = obj.obs[group_key].astype("category")
-            groups = {k: (vals == k).to_numpy() for k in vals.cat.categories}
-        elif mode == "per_condition":
-            group_key = "condition"
-            if group_key not in obj.obs:
-                raise KeyError("mode='per_condition' requires adata.obs['condition']")
-            vals = obj.obs[group_key].astype("category")
-            groups = {k: (vals == k).to_numpy() for k in vals.cat.categories}
-        else:
-            raise ValueError(f"Unknown mode={mode!r}")
-
-        def _scale_dense_block(Xsub: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-            if np.isnan(Xsub).any():
-                mean = (
-                    np.nanmean(Xsub, axis=0)
-                    if with_mean
-                    else np.zeros(Xsub.shape[1], dtype=np.float64)
-                )
-                std = (
-                    np.nanstd(Xsub, axis=0, ddof=ddof)
-                    if with_std
-                    else np.ones(Xsub.shape[1], dtype=np.float64)
-                )
-            else:
-                mean = (
-                    Xsub.mean(axis=0)
-                    if with_mean
-                    else np.zeros(Xsub.shape[1], dtype=np.float64)
-                )
-                std = (
-                    Xsub.std(axis=0, ddof=ddof)
-                    if with_std
-                    else np.ones(Xsub.shape[1], dtype=np.float64)
-                )
-
-            std = np.asarray(std, dtype=np.float64)
-            std[std < eps] = 1.0
-
-            if with_mean:
-                Xsub -= mean
-            if with_std:
-                Xsub /= std
-
-            if max_value is not None:
-                np.clip(Xsub, -max_value, max_value, out=Xsub)
-
-            return np.asarray(mean, dtype=np.float64), std
-
-        stats: ScaleStats = {}
-
-        if sp.issparse(X):
-            X_lil = X.tolil(copy=True)
-            for g, m in groups.items():
-                idx = np.where(m)[0]
-                if idx.size == 0:
-                    continue
-                block = X[idx, :].toarray().astype(np.float32, copy=False)
-                mean, std = _scale_dense_block(block)
-                stats[g] = (mean, std)
-                X_lil[idx, :] = block
-
-            X_out = X_lil.tocsr()
-        else:
-            X_out = np.asarray(X).astype(np.float32, copy=False)
-            if not X_out.flags.writeable:
-                X_out = X_out.copy()
-
-            for g, m in groups.items():
-                idx = np.where(m)[0]
-                if idx.size == 0:
-                    continue
-                block = np.array(X_out[idx, :], dtype=np.float32, copy=False)
-                mean, std = _scale_dense_block(block)
-                stats[g] = (mean, std)
-                X_out[idx, :] = block
-
-        if output_layer is None:
-            if layer is None:
-                obj.X = X_out
-            else:
-                obj.layers[layer] = X_out
-        else:
-            obj.layers[output_layer] = X_out
-
-        obj.uns.setdefault("scale_ion_images_zscore", {})
-        obj.uns["scale_ion_images_zscore"].update(
-            {
-                "mode": mode,
-                "group_key": group_key,
-                "layer": layer,
-                "output_layer": output_layer,
-                "with_mean": with_mean,
-                "with_std": with_std,
-                "ddof": int(ddof),
-                "eps": float(eps),
-                "max_value": None if max_value is None else float(max_value),
-            }
+        return scale_ion_images_zscore_processing(
+            self,
+            mode=mode,
+            layer=layer,
+            output_layer=output_layer,
+            with_mean=with_mean,
+            with_std=with_std,
+            ddof=ddof,
+            eps=eps,
+            max_value=max_value,
+            return_stats=return_stats,
+            copy=copy,
         )
-
-        if copy:
-            if return_stats:
-                return obj, stats
-            return obj
-
-        return stats if return_stats else None
 
     def tic_normalize(
         self,
