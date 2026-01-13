@@ -12,12 +12,17 @@ for MSI data. It allows for:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Literal, Optional, Tuple, Union, TYPE_CHECKING
 
 import numpy as np
 import scipy.sparse as sp
 from scipy import ndimage
+
+from pymsix.params.options import (
+    MSIHotspotCapParams,
+    MSIMedianFilterParams,
+    MSIThresholdParams,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from pymsix.core.msicube import MSICube
@@ -174,33 +179,6 @@ def _infer_grid_index(
     return H, W, flat.astype(np.int64)
 
 
-@dataclass
-class MSIHotspotCapParams:
-    """
-    Parameters for hotspot capping.
-    
-    Attributes
-    ----------
-    q : float, default 0.99
-        Quantile threshold (0.0 to 1.0). Intensities above this value 
-        will be clipped to the quantile value.
-    layer_in : str, optional
-        The AnnData layer to process. If None, uses ``adata.X``.
-    layer_out : str, optional
-        The layer to store results. If None, overwrites the input.
-    chunk_size : int, default 256
-        Number of ion images to process simultaneously to optimize memory.
-    dtype : str or np.dtype, default "float32"
-        The numerical precision for processing.
-    """
-
-    q: float = 0.99
-    layer_in: Optional[str] = None
-    layer_out: Optional[str] = None
-    chunk_size: int = 256
-    dtype: Union[str, np.dtype] = "float32"
-
-
 def msi_cap_hotspots(
     msicube: "MSICube", *, params: MSIHotspotCapParams = MSIHotspotCapParams()
 ) -> None:
@@ -227,33 +205,6 @@ def msi_cap_hotspots(
         np.minimum(block, caps[None, :], out=block)
 
     _set_matrix(msicube, params.layer_out, Xo)
-
-
-@dataclass
-class MSIThresholdParams:
-    """
-    Parameters for per-ion quantile thresholding.
-
-    Attributes
-    ----------
-    q : float, default 0.5
-        The quantile below which intensities are removed.
-    mode : {"zero", "nan"}, default "zero"
-        Whether to set values below threshold to 0.0 or NaN.
-    layer_in : str, optional
-        Input layer in AnnData.
-    layer_out : str, optional
-        Output layer in AnnData.
-    chunk_size : int, default 256
-        Number of variables processed in a single block.
-    """
-
-    q: float = 0.5
-    mode: Literal["zero", "nan"] = "zero"
-    layer_in: Optional[str] = None
-    layer_out: Optional[str] = None
-    chunk_size: int = 256
-    dtype: Union[str, np.dtype] = "float32"
 
 
 def msi_threshold_quantile(
@@ -283,51 +234,6 @@ def msi_threshold_quantile(
             block[mask] = np.nan
 
     _set_matrix(msicube, params.layer_out, Xo)
-
-
-@dataclass
-class MSIMedianFilterParams:
-    """
-    Parameters for applying a 2D median filter to ion images.
-
-    Attributes
-    ----------
-    size : int, default 3
-        The side length of the square median window (e.g., 3 for 3x3).
-    layer_in : str, optional
-        Source layer name.
-    layer_out : str, optional
-        Destination layer name.
-    x_key, y_key : str
-        Metadata keys for pixel coordinates.
-    spatial_key : str
-        Key for the spatial coordinate matrix in ``obsm``.
-    shape : tuple, optional
-        Explicit (Height, Width) for the spatial grid.
-    origin : {"min", "zero"}
-        Whether to offset coordinates to (0,0).
-    fill_value : float, default 0.0
-        Value used for pixels with no data in a non-rectangular grid.
-    nan_to_num_before : bool, default True
-        If True, replaces NaN values with `fill_value` before filtering.
-    chunk_size : int, default 64
-        Number of images processed per block. Keep low for large spatial grids.
-    """
-
-    size: int = 3
-    layer_in: Optional[str] = None
-    layer_out: Optional[str] = None
-    dtype: Union[str, np.dtype] = "float32"
-
-    x_key: str = "x"
-    y_key: str = "y"
-    spatial_key: str = "spatial"
-    shape: Optional[Tuple[int, int]] = None
-    origin: Literal["min", "zero"] = "min"
-
-    fill_value: float = 0.0
-    nan_to_num_before: bool = True
-    chunk_size: int = 64
 
 
 def msi_median_filter_2d(
@@ -394,4 +300,3 @@ def msi_median_filter_2d(
         Xo[:, start:end] = block_out.T
 
     _set_matrix(msicube, params.layer_out, Xo)
-

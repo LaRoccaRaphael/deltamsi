@@ -6,6 +6,12 @@ from .options import (
     RecalibrationOptions,
     MassClusteringOptions,
     KendrickPlotOptions,
+    RecalParams,
+    CosineColocParams,
+    MSIHotspotCapParams,
+    MSIThresholdParams,
+    MSIMedianFilterParams,
+    RankIonsMSIParams,
 )
 
 __all__ = [
@@ -16,4 +22,10 @@ __all__ = [
     "RecalibrationOptions",
     "MassClusteringOptions",
     "KendrickPlotOptions",
+    "RecalParams",
+    "CosineColocParams",
+    "MSIHotspotCapParams",
+    "MSIThresholdParams",
+    "MSIMedianFilterParams",
+    "RankIonsMSIParams",
 ]

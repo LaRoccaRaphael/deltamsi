@@ -19,8 +19,8 @@ import numpy as np
 from pyimzml.ImzMLParser import ImzMLParser
 from pyimzml.ImzMLWriter import ImzMLWriter
 
+from pymsix.params.options import RecalParams
 from pymsix.processing.recalibration_core import (
-    RecalParams,
     load_database_masses,
     select_top_peaks,
     generate_hits,
@@ -67,7 +67,7 @@ def write_corrected_msi(
 
     Examples
     --------
-    >>> from pymsix.processing.recalibration_core import RecalParams
+    >>> from pymsix.params import RecalParams
     >>> params = RecalParams(tol_da=0.02, n_peaks=500)
     >>> db = np.array([149.023, 227.031, 413.211])
     >>> write_corrected_msi("input.imzML", "output.imzML", db, params)
