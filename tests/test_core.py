@@ -639,7 +639,7 @@ def test_perform_peak_picking_success_and_storage(
     np.testing.assert_array_equal(stored_mzs, expected_mzs)
 
     # Check that the index (feature_id) is correctly formatted
-    expected_index = [f"mz_{m:.4f}" for m in expected_mzs]
+    expected_index = [f"mz_{idx}_{m:.4f}" for idx, m in enumerate(expected_mzs)]
     assert list(cube.adata.var.index) == expected_index
     assert cube.adata.var.index.name == "feature_id"
 
