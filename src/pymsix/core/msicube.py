@@ -86,6 +86,9 @@ from pymsix.processing.discriminant_analysis import (
     RankIonsMSIParams,
     rank_ions_groups_msi,
 )
+from pymsix.processing.mz_matching import (
+    match_mzs_to_var_simple as match_mzs_to_var_simple_processing,
+)
 from pymsix.plotting.plot_kendrick_cluster_mz import plot_kendrick_from_clustering
 
 from pymsix.params.options import (
@@ -2042,6 +2045,74 @@ class MSICube:
             layer=layer,
             store_tic_in_obs=store_tic_in_obs,
             copy=copy,
+        )
+
+    def match_mzs_to_var_simple(
+        self,
+        mzs: Sequence[float],
+        *,
+        mz_col: str = "mz",
+        mode: Literal["closest", "tolerance"] = "closest",
+        tol: float = 5.0,
+        tol_unit: Literal["ppm", "da"] = "ppm",
+        return_all_within_tol: bool = True,
+        assume_sorted: bool = False,
+        annotation: Optional[Union[str, Sequence[Optional[str]]]] = None,
+        annotation_col: Optional[str] = None,
+        multi_write: Literal["overwrite", "append"] = "append",
+        sep: str = ";",
+    ) -> pd.DataFrame:
+        """
+        Match query m/z values to ``self.adata.var`` rows.
+
+        This is a convenience wrapper around
+        :func:`pymsix.processing.mz_matching.match_mzs_to_var_simple` that
+        operates directly on the MSICube instance.
+
+        Parameters
+        ----------
+        mzs : sequence of float
+            Query m/z values to match against ``adata.var[mz_col]``.
+        mz_col : str, default "mz"
+            Column name in ``adata.var`` storing m/z values.
+        mode : {"closest", "tolerance"}, default "closest"
+            Matching strategy.
+        tol : float, default 5.0
+            Tolerance value when ``mode="tolerance"``.
+        tol_unit : {"ppm", "da"}, default "ppm"
+            Units for the tolerance value.
+        return_all_within_tol : bool, default True
+            When using tolerance mode, return all matches within tolerance.
+        assume_sorted : bool, default False
+            If True, assumes ``adata.var[mz_col]`` is already sorted.
+        annotation : str or sequence, optional
+            Annotation(s) to write to matched variables.
+        annotation_col : str, optional
+            Column name in ``adata.var`` to write annotations into.
+        multi_write : {"overwrite", "append"}, default "append"
+            Behavior when multiple annotations map to the same variable.
+        sep : str, default ";"
+            Separator used for appending annotations.
+
+        Returns
+        -------
+        pd.DataFrame
+            A DataFrame with match results (one row per query m/z).
+        """
+
+        return match_mzs_to_var_simple_processing(
+            self,
+            mzs,
+            mz_col=mz_col,
+            mode=mode,
+            tol=tol,
+            tol_unit=tol_unit,
+            return_all_within_tol=return_all_within_tol,
+            assume_sorted=assume_sorted,
+            annotation=annotation,
+            annotation_col=annotation_col,
+            multi_write=multi_write,
+            sep=sep,
         )
 
     def plot_ion_images(
