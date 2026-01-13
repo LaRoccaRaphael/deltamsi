@@ -82,6 +82,10 @@ from pymsix.processing.mass_clustering import (
 )
 from pymsix.processing.kendrick import compute_kendrick_varm
 from pymsix.processing.mass_neighbors import direct_mass_neighbors
+from pymsix.processing.discriminant_analysis import (
+    RankIonsMSIParams,
+    rank_ions_groups_msi,
+)
 from pymsix.plotting.plot_kendrick_cluster_mz import plot_kendrick_from_clustering
 
 from pymsix.params.options import (
@@ -932,6 +936,36 @@ class MSICube:
             as_df=as_df,
             dtype=dtype,
         )
+
+    def rank_ions_groups_msi(self, *, params: RankIonsMSIParams) -> pd.DataFrame:
+        """
+        Rank ions by differential expression between two MSI groups.
+
+        This is a convenience wrapper around
+        :func:`pymsix.processing.discriminant_analysis.rank_ions_groups_msi`
+        that operates on ``self.adata`` and returns the ranked ions table.
+
+        Parameters
+        ----------
+        params : RankIonsMSIParams
+            Configuration object defining group labels, statistics, and output
+            settings. Results are stored in ``adata.uns[params.key_added]``.
+
+        Returns
+        -------
+        pandas.DataFrame
+            The top-ranked ions table.
+
+        Raises
+        ------
+        ValueError
+            If ``self.adata`` is None.
+        """
+
+        if self.adata is None:
+            raise ValueError("MSICube.adata is None. Load or compute data first.")
+
+        return rank_ions_groups_msi(self.adata, params=params)
 
     def _scan_imzml_files(self, directory: str) -> None:
         """
