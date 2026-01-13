@@ -366,6 +366,8 @@ class MassClusteringOptions:
         Name of the column used to weight edges (e.g., matching score or correlation).
     label_col : str, optional, default "label"
         Column name for annotation labels used during the clustering process.
+    output_col : str, default "mass_cluster"
+        Column name in ``adata.var`` where clustering labels are stored.
     resolution : float, default 1.0
         Resolution parameter for the Louvain/Leiden algorithm. Higher values 
         lead to more (smaller) clusters.
@@ -411,6 +413,7 @@ class MassClusteringOptions:
     delta_col: str = "delta_da"
     score_col: str = "score"
     label_col: Optional[str] = "label"
+    output_col: str = "mass_cluster"
 
     # Graph & Clustering
     resolution: float = 1.0
@@ -443,6 +446,8 @@ class MassClusteringOptions:
             raise ValueError("knn_mode must be 'union' or 'mutual'.")
         if self.method == "colocalization" and self.coloc_varp_key is None:
             raise ValueError("coloc_varp_key must be provided for colocalization mode.")
+        if not self.output_col:
+            raise ValueError("output_col must be a non-empty string.")
 
     def get_tol_param(self) -> Union[float, Tuple[str, float]]:
         """Returns the format expected by the 'tol' argument."""
