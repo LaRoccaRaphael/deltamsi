@@ -3202,10 +3202,16 @@ class MSICube:
             raise ValueError("AnnData object is empty.")
 
         if "mass_cluster" not in self.adata.var:
-            raise ValueError(
-                "No clustering results found in adata.var. "
-                "Please run 'cluster_masses()' first."
-            )
+            if options.label_col is not None and not options.two_panels:
+                clustering_labels = np.zeros(self.adata.n_vars, dtype=int)
+            else:
+                raise ValueError(
+                    "No clustering results found in adata.var. "
+                    "Please run 'cluster_masses()' first, or provide label_col with "
+                    "two_panels=False."
+                )
+        else:
+            clustering_labels = self.adata.var["mass_cluster"].values
 
         # Retrieval of masses
         if options.mass_col not in self.adata.var:
@@ -3215,7 +3221,7 @@ class MSICube:
         masses = self.adata.var[options.mass_col].values
 
         # Reconstruction of clustering_result dictionary
-        clustering_result = {"labels": self.adata.var["mass_cluster"].values}
+        clustering_result = {"labels": clustering_labels}
 
         # Optional family/label retrieval
         family = None
