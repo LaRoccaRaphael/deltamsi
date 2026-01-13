@@ -86,6 +86,9 @@ from pymsix.processing.discriminant_analysis import (
     RankIonsMSIParams,
     rank_ions_groups_msi,
 )
+from pymsix.processing.mz_matching import (
+    match_mzs_to_var_simple as match_mzs_to_var_simple_processing,
+)
 from pymsix.plotting.plot_kendrick_cluster_mz import plot_kendrick_from_clustering
 
 from pymsix.params.options import (
@@ -2044,6 +2047,74 @@ class MSICube:
             copy=copy,
         )
 
+    def match_mzs_to_var_simple(
+        self,
+        mzs: Sequence[float],
+        *,
+        mz_col: str = "mz",
+        mode: Literal["closest", "tolerance"] = "closest",
+        tol: float = 5.0,
+        tol_unit: Literal["ppm", "da"] = "ppm",
+        return_all_within_tol: bool = True,
+        assume_sorted: bool = False,
+        annotation: Optional[Union[str, Sequence[Optional[str]]]] = None,
+        annotation_col: Optional[str] = None,
+        multi_write: Literal["overwrite", "append"] = "append",
+        sep: str = ";",
+    ) -> pd.DataFrame:
+        """
+        Match query m/z values to ``self.adata.var`` rows.
+
+        This is a convenience wrapper around
+        :func:`pymsix.processing.mz_matching.match_mzs_to_var_simple` that
+        operates directly on the MSICube instance.
+
+        Parameters
+        ----------
+        mzs : sequence of float
+            Query m/z values to match against ``adata.var[mz_col]``.
+        mz_col : str, default "mz"
+            Column name in ``adata.var`` storing m/z values.
+        mode : {"closest", "tolerance"}, default "closest"
+            Matching strategy.
+        tol : float, default 5.0
+            Tolerance value when ``mode="tolerance"``.
+        tol_unit : {"ppm", "da"}, default "ppm"
+            Units for the tolerance value.
+        return_all_within_tol : bool, default True
+            When using tolerance mode, return all matches within tolerance.
+        assume_sorted : bool, default False
+            If True, assumes ``adata.var[mz_col]`` is already sorted.
+        annotation : str or sequence, optional
+            Annotation(s) to write to matched variables.
+        annotation_col : str, optional
+            Column name in ``adata.var`` to write annotations into.
+        multi_write : {"overwrite", "append"}, default "append"
+            Behavior when multiple annotations map to the same variable.
+        sep : str, default ";"
+            Separator used for appending annotations.
+
+        Returns
+        -------
+        pd.DataFrame
+            A DataFrame with match results (one row per query m/z).
+        """
+
+        return match_mzs_to_var_simple_processing(
+            self,
+            mzs,
+            mz_col=mz_col,
+            mode=mode,
+            tol=tol,
+            tol_unit=tol_unit,
+            return_all_within_tol=return_all_within_tol,
+            assume_sorted=assume_sorted,
+            annotation=annotation,
+            annotation_col=annotation_col,
+            multi_write=multi_write,
+            sep=sep,
+        )
+
     def plot_ion_images(
         self,
         mz: Union[float, str, Sequence[Union[float, str]]],
@@ -2130,76 +2201,6 @@ class MSICube:
             samples = self.adata.obs['sample'].unique().tolist()
 
         plot_ion_images(self, mz=mz, samples=samples, **kwargs)
-
-    def find_closest_mz_indices(
-        self,
-        target_mz_values: Sequence[Union[float, int, str]],
-        *,
-        annotation: Optional[Union[str, int, float]] = None,
-        annotation_column: Optional[str] = None,
-    ) -> List[int]:
-        """
-        Find indices of features closest to the requested m/z values.
-
-        Optionally, annotate the selected features in ``adata.var`` by setting a
-        provided annotation value in a specified column.
-
-        Parameters
-        ----------
-        target_mz_values : sequence of (float, int, or str)
-            The target m/z values to search for.
-        annotation : str, int, or float, optional
-            Annotation value to assign to the closest m/z features.
-        annotation_column : str, optional
-            Column name in ``adata.var`` to store the annotation value. Must be
-            provided when ``annotation`` is set.
-
-        Returns
-        -------
-        list of int
-            Indices of the closest m/z values in ``adata.var``.
-
-        Raises
-        ------
-        ValueError
-            If ``adata`` is missing or if annotation parameters are incomplete.
-        KeyError
-            If neither ``"m/z"`` nor ``"mz"`` is found in ``adata.var``.
-        """
-
-        if self.adata is None:
-            raise ValueError("MSICube.adata is None. Load or compute data first.")
-
-        if (annotation is None) != (annotation_column is None):
-            raise ValueError(
-                "Both 'annotation' and 'annotation_column' must be provided together."
-            )
-
-        if "m/z" in self.adata.var:
-            mz_column = "m/z"
-        elif "mz" in self.adata.var:
-            mz_column = "mz"
-        else:
-            raise KeyError("Neither 'm/z' nor 'mz' was found in adata.var.")
-
-        reference_mz_values = self.adata.var[mz_column].to_numpy()
-        target_array = np.array([float(m) for m in target_mz_values], dtype=float)
-
-        closest_indices = [
-            int(np.argmin(np.abs(reference_mz_values - target)))
-            for target in target_array
-        ]
-
-        if annotation_column is not None:
-            if annotation_column not in self.adata.var:
-                self.adata.var[annotation_column] = np.zeros(
-                    self.adata.var.shape[0], dtype=object
-                )
-            self.adata.var.loc[
-                self.adata.var.index[closest_indices], annotation_column
-            ] = annotation
-
-        return closest_indices
 
     def compute_spatial_chaos_scores(
         self,
