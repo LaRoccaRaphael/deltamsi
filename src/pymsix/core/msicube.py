@@ -1407,10 +1407,10 @@ class MSICube:
         **3. Checking selected features**
         
         >>> print(cube.adata.var.head())
-                        mz
-        feature_id          
-        mz_104.1234  104.1234
-        mz_150.0891  150.0891
+                          mz
+        feature_id            
+        mz_0_104.1234  104.1234
+        mz_1_150.0891  150.0891
         """
         logger.info("Starting peak picking on the global mean spectrum.")
 
@@ -1470,8 +1470,8 @@ class MSICube:
         # We use the formatted mz as a unique identifier for AnnData.var.
         new_var_data = pd.DataFrame(
             data={"mz": selected_mzs},
-            # Index formatted for a readable identifier (e.g., 'mz_200.0000')
-            index=[f"mz_{m:.4f}" for m in selected_mzs],
+            # Index formatted for a readable identifier (e.g., 'mz_0_200.0000')
+            index=[f"mz_{idx}_{m:.4f}" for idx, m in enumerate(selected_mzs)],
         )
         new_var_data.index.name = "feature_id"
 
