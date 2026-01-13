@@ -2825,7 +2825,7 @@ class MSICube:
 
         Attributes Modified
         -------------------
-        adata.var['mass_cluster'] : pandas.Series
+        adata.var[options.output_col] : pandas.Series
             Cluster assignment for each m/z peak. Values of -1 indicate noise/unclustered.
         adata.varp['mass_clustering_weights'] : scipy.sparse.csr_matrix
             The weighted adjacency matrix of the Mass Difference Graph.
@@ -2929,7 +2929,7 @@ class MSICube:
                 return_graph=opts.return_graph,
             )
 
-        self.adata.var["mass_cluster"] = res["labels"]
+        self.adata.var[opts.output_col] = res["labels"]
 
         df_edges = res["edges"]
         n_vars = self.adata.n_vars
