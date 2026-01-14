@@ -211,7 +211,7 @@ class MSICube:
 
         See Also
         --------
-        save_adata : The public method used to persist data to this path.
+        save : The public method used to persist data to this path.
 
         Examples
         --------
@@ -227,7 +227,7 @@ class MSICube:
         extension = "h5ad" if file_format == "h5ad" else "zarr"
         return os.path.join(self.data_directory, f"adata.{extension}")
 
-    def save_adata(
+    def save(
         self,
         adata_path: Optional[str] = None,
         file_format: Literal["h5ad", "zarr"] = "h5ad",
@@ -279,12 +279,12 @@ class MSICube:
 
         >>> cube = MSICube("path/to/data")
         >>> # ... after loading data ...
-        >>> cube.save_adata()
+        >>> cube.save()
         'path/to/data/adata.h5ad'
 
         Save to a custom location using Zarr format with specific compression:
 
-        >>> cube.save_adata(
+        >>> cube.save(
         ...     adata_path="/exports/results/experiment_1.zarr",
         ...     file_format="zarr",
         ...     storage_transformer=my_transformer
@@ -311,7 +311,7 @@ class MSICube:
         logger.info(f"AnnData saved to {save_path} (format={file_format}).")
         return save_path
 
-    def load_adata(
+    def load(
         self,
         adata_path: Optional[str] = None,
         file_format: Literal["h5ad", "zarr"] = "h5ad",
@@ -352,20 +352,20 @@ class MSICube:
 
         See Also
         --------
-        save_adata : Persist the current AnnData object to disk.
+        save : Persist the current AnnData object to disk.
 
         Examples
         --------
         Load the default 'h5ad' file from the data directory:
 
         >>> cube = MSICube("./experiment_data")
-        >>> cube.load_adata()
+        >>> cube.load()
         INFO: AnnData loaded from ./experiment_data/adata.h5ad (format=h5ad).
         AnnData object with n_obs × n_vars = 1500 × 20000
 
         Load a specific Zarr file with memory-mapping (backed mode):
 
-        >>> cube.load_adata(
+        >>> cube.load(
         ...     adata_path="results/processed_data.zarr",
         ...     file_format="zarr",
         ...     chunks="auto"
@@ -521,7 +521,7 @@ class MSICube:
         file_format : {'h5ad', 'zarr'}, default 'h5ad'
             The storage format of the file to be loaded.
         **kwargs : dict
-            Additional keyword arguments passed to :meth:`load_adata`, which in 
+            Additional keyword arguments passed to :meth:`load`, which in 
             turn are passed to :func:`anndata.read_h5ad` or :func:`anndata.read_zarr`. 
             Common arguments include ``backed='r'`` for memory-mapping.
 
@@ -539,7 +539,7 @@ class MSICube:
 
         See Also
         --------
-        load_adata : The underlying method used to load the data.
+        load : The underlying method used to load the data.
         __init__ : The standard constructor for MSICube.
 
         Examples
@@ -561,7 +561,7 @@ class MSICube:
         """
 
         cube = cls(data_directory=data_directory)
-        cube.load_adata(adata_path=adata_path, file_format=file_format, **kwargs)
+        cube.load(adata_path=adata_path, file_format=file_format, **kwargs)
         return cube
 
     def log1p_intensity(
@@ -889,7 +889,7 @@ class MSICube:
                 # Store: sample_name -> full_path
                 self.org_imzml_path_dict[sample_name] = full_path
 
-    def compute_all_mean_spectra(
+    def _compute_all_mean_spectra(
         self, mode: Literal["profile", "centroid"], **kwargs: Any
     ) -> None:
         """
@@ -950,14 +950,14 @@ class MSICube:
         --------
         **1. Standard usage with default parameters**
         
-        >>> cube.compute_all_mean_spectra(mode="centroid")
+        >>> cube._compute_all_mean_spectra(mode="centroid")
 
         **2. Customizing the m/z range and precision**
         
         If your data targets small metabolites (e.g., m/z 50 to 500) with 
         high-resolution binning:
 
-        >>> cube.compute_all_mean_spectra(
+        >>> cube._compute_all_mean_spectra(
         ...     mode="profile",
         ...     min_mz=50.0,
         ...     max_mz=500.0,
@@ -1065,7 +1065,7 @@ class MSICube:
         ValueError
             If invalid options are provided or if required spectra are missing.
         RuntimeError
-            If ``compute_all_mean_spectra`` has not been executed previously.
+            If ``compute_mean_spectra(scope=samples)`` has not been executed previously.
 
         Notes
         -----
@@ -1078,15 +1078,15 @@ class MSICube:
         --------
         **1. Standard global combination**
         
-        >>> cube.compute_all_mean_spectra(mode="centroid")
-        >>> cube.compute_global_mean_spectrum()
+        >>> cube._compute_all_mean_spectra(mode="centroid")
+        >>> cube._compute_global_mean_spectrum()
 
         **2. High-resolution combination using the full m/z range**
         
         If you want to keep data from all samples even if they don't overlap 
         perfectly:
 
-        >>> cube.compute_global_mean_spectrum(
+        >>> cube._compute_global_mean_spectrum(
         ...     binning_p=0.00005,
         ...     use_intersection=False,
         ...     tic_normalize=True
@@ -1099,7 +1099,7 @@ class MSICube:
         """
         if self.adata is None or "mean_spectra" not in self.adata.uns:
             logger.error(
-                "Individual mean spectra not calculated yet. Run compute_all_mean_spectra first."
+                "Individual mean spectra not calculated yet. Run compute_mean_spectra(scope=samples) first."
             )
             return
 
@@ -1154,6 +1154,77 @@ class MSICube:
         logger.info(
             "Global mean spectrum calculated and stored in adata.uns['mean_spectrum_global']."
         )
+
+    def compute_mean_spectra(
+        self,
+        scope: Literal["samples", "global"] = "samples",
+        mode: Optional[Literal["profile", "centroid"]] = None,
+        **kwargs: Any,
+    ) -> None:
+        """
+        Compute mean spectra for the project.
+
+        Depending on the 'scope', this method either calculates an average spectrum 
+        for each individual sample or combines existing sample spectra into a single 
+        consensus (global) spectrum.
+
+        Parameters
+        ----------
+        scope : {'samples', 'global'}, default 'samples'
+            * 'samples': Calculates the mean spectrum for every imzML file.
+            * 'global': Aggregates all sample spectra into one reference spectrum.
+        mode : {'profile', 'centroid'}, optional
+            Acquisition mode. Required if scope is 'samples'.
+        **kwargs : Any
+            If scope='samples': 
+                Parameters used to configure the m/z axis and peak detection accuracy. 
+                Supported arguments include:
+
+                * **min_mz** : *float, default 0.0*
+                The minimum m/z value to consider.
+                * **max_mz** : *float, default 2000.0*
+                The maximum m/z value to consider.
+                * **binning_p** : *float, default 0.001*
+                The precision of the m/z bins (step size) used for accumulation.
+                * **mass_accuracy_ppm** : *int, default 3*
+                The mass accuracy in parts-per-million, used for peak alignment.
+                * **tolerance_da** : *float, optional*
+                Absolute tolerance in Daltons. If provided, overrides ``mass_accuracy_ppm``.
+                * **n_sigma** : *float, default 3.0*
+                The number of standard deviations for peak width calculation.
+
+            If scope='global': 
+                Configuration parameters for the spectral combination process. 
+                * **binning_p** : *float, default 0.0001*
+                The precision (step size) of the global m/z axis. A smaller value 
+                preserves more spectral resolution but increases memory usage.
+                * **use_intersection** : *bool, default True*
+                If True, the global m/z range will be the intersection (overlap) 
+                of all samples. If False, the union (full range) is used.
+                * **tic_normalize** : *bool, default True*
+                Whether to normalize individual mean spectra by their Total Ion 
+                Current (TIC) before averaging to account for intensity variations 
+                between runs.
+                * **compress_axis** : *bool, default False*
+                If True, removes empty m/z bins to reduce the size of the 
+                resulting arrays.
+
+
+        See Also
+        --------
+        clear_mean_spectra : To remove results from memory.
+        """
+        if scope == "samples":
+            if mode is None:
+                raise ValueError("Argument 'mode' is required when scope='samples'.")
+            self._compute_all_mean_spectra(mode=mode, **kwargs)
+        
+        elif scope == "global":
+            self._compute_global_mean_spectrum(**kwargs)
+        
+        else:
+            raise ValueError(f"Invalid scope '{scope}'. Choose 'samples' or 'global'.")
+
 
     def clear_mean_spectra(self) -> None:
         """
@@ -1229,7 +1300,7 @@ class MSICube:
         else:
             logger.info("No mean spectra entries found in adata.uns to remove.")
 
-    def perform_peak_picking(self, **kwargs: Any) -> None:
+    def pick_peaks(self, **kwargs: Any) -> None:
         """
         Detect local maxima in the global mean spectrum to define study-wide features.
 
@@ -1285,12 +1356,12 @@ class MSICube:
         **1. Standard peak picking**
         Detect up to 5000 peaks using default distance constraints:
 
-        >>> cube.perform_peak_picking(topn=5000)
+        >>> cube.pick_peaks(topn=5000)
 
         **2. High-resolution distance constraints**
         Use a 15 ppm window to ensure peaks are well-separated in high-res data:
 
-        >>> cube.perform_peak_picking(
+        >>> cube.pick_peaks(
         ...     topn=2000,
         ...     distance_ppm=15.0,
         ...     binning_p=0.00005
@@ -1412,7 +1483,7 @@ class MSICube:
             "Selected mz values stored in adata.var and adata.uns['peak_picking_options']."
         )
 
-    def extract_peak_matrix(self, **kwargs: Any) -> None:
+    def extract_matrix(self, **kwargs: Any) -> None:
         """
         Extract peak intensities for all pixels across all samples.
 
@@ -1473,13 +1544,13 @@ class MSICube:
         **1. Extract using a fixed PPM tolerance (Recommended)**
         
         >>> # Extract with a 10 ppm window around each peak
-        >>> cube.extract_peak_matrix(tol_ppm=10.0)
+        >>> cube.extract_matrix(tol_ppm=10.0)
         INFO: Extraction complete. Final shape: (15000, 2000)
 
         **2. Extract using a fixed Dalton window**
         
         >>> # Extract with +/- 0.01 Da around each peak
-        >>> cube.extract_peak_matrix(tol_da=0.01)
+        >>> cube.extract_matrix(tol_da=0.01)
 
         **3. Post-extraction inspection**
         
@@ -1494,7 +1565,7 @@ class MSICube:
         if self.adata is None or self.adata.var is None or "mz" not in self.adata.var:
             logger.error(
                 "Target mz list not found in adata.var['mz']. "
-                "Run perform_peak_picking first."
+                "Run pick_peaks first."
             )
             return
 
@@ -1588,7 +1659,91 @@ class MSICube:
             f"Data stored in adata.X, adata.obsm['spatial'], adata.obs['sample']."
         )
 
-    def scale_ion_images_zscore(
+    def create_feature_matrix(
+        self,
+        peak_picking_kwargs: dict | None = None,
+        extraction_kwargs: dict | None = None,
+    ) -> None:
+        """
+        Create a full pixel × feature matrix from raw MSI data.
+
+        This is a high-level convenience method that combines:
+
+        1. Peak detection on the global mean spectrum (``pick_peaks``)
+        2. Extraction of pixel-wise intensities for the detected peaks
+        (``extract_matrix``)
+
+        It is the recommended entry point for building ``adata.X``.
+
+        Parameters
+        ----------
+        peak_picking_kwargs : dict, optional
+            Keyword arguments forwarded to ``pick_peaks``.
+            If ``None``, default peak picking parameters are used.
+
+            Supported options include:
+
+            * **topn** : int, default 10000  
+            Maximum number of peaks to retain.
+            * **distance_da** : float, optional  
+            Minimum absolute distance between peaks (Da).
+            * **distance_ppm** : float, optional  
+            Minimum relative distance between peaks (ppm).
+            * **binning_p** : float, default 0.0001  
+            m/z precision used for peak detection.
+
+            Example::
+            
+                peak_picking_kwargs={
+                    "topn": 3000,
+                    "distance_ppm": 15.0,
+                    "binning_p": 0.00005,
+                }
+
+        extraction_kwargs : dict, optional
+            Keyword arguments forwarded to ``extract_matrix``.
+            If ``None``, default extraction parameters are used.
+
+            Supported options include:
+
+            * **tol_da** : float, optional  
+            Absolute extraction tolerance in Daltons.
+            * **tol_ppm** : float, optional  
+            Relative extraction tolerance in ppm (recommended).
+
+            Example::
+            
+                extraction_kwargs={
+                    "tol_ppm": 10.0
+                }
+
+        Returns
+        -------
+        None
+            Populates ``self.adata`` with:
+
+            * ``adata.X`` : intensity matrix (pixels × peaks)
+            * ``adata.var`` : detected peak m/z values
+            * ``adata.obs`` : pixel metadata (sample labels)
+            * ``adata.obsm['spatial']`` : spatial coordinates
+
+        Notes
+        -----
+        - This method may restructure the AnnData object.
+        - All parameters used during peak picking and extraction are
+        stored in ``adata.uns`` for full provenance tracking.
+        - For large datasets, this operation may be time- and memory-intensive.
+
+        See Also
+        --------
+        pick_peaks : Detect study-wide m/z features.
+        extract_matrix : Extract pixel-wise intensities for selected peaks.
+        """
+
+        self.pick_peaks(**(peak_picking_kwargs or {}))
+        self.extract_matrix(**(extraction_kwargs or {}))
+
+    def scale_zscore(
         self,
         *,
         mode: ScaleMode = "all",
@@ -1671,11 +1826,11 @@ class MSICube:
         --------
         **1. Global Z-score scaling in-place**
         
-        >>> cube.scale_ion_images_zscore(mode="all")
+        >>> cube.scale_zscore(mode="all")
 
         **2. Per-sample scaling with outlier clipping**
         
-        >>> cube.scale_ion_images_zscore(
+        >>> cube.scale_zscore(
         ...     mode="per_sample", 
         ...     max_value=3.0, 
         ...     output_layer="scaled"
@@ -1683,7 +1838,7 @@ class MSICube:
 
         **3. Scale a specific layer and retrieve statistics**
         
-        >>> stats = cube.scale_ion_images_zscore(
+        >>> stats = cube.scale_zscore(
         ...     layer="log1p", 
         ...     return_stats=True
         ... )
@@ -1704,7 +1859,7 @@ class MSICube:
             copy=copy,
         )
 
-    def tic_normalize(
+    def normalize_tic(
         self,
         *,
         target_sum: float = 1e6,
@@ -1762,13 +1917,13 @@ class MSICube:
         --------
         **1. Standard in-place normalization**
         
-        >>> cube.tic_normalize(target_sum=1e4)
+        >>> cube.normalize_tic(target_sum=1e4)
         >>> # The pre-normalization TIC is now saved in observations
         >>> print(cube.adata.obs["tic"].head())
 
         **2. Normalizing a specific layer and returning a copy**
         
-        >>> normalized_cube = cube.tic_normalize(
+        >>> normalized_cube = cube.normalize_tic(
         ...     layer="raw", 
         ...     target_sum=1e6, 
         ...     copy=True
@@ -2148,7 +2303,7 @@ class MSICube:
 
         return fold_change
 
-    def plot_mean_spectrum_windows(
+    def plot_peak_windows(
         self,
         peak_mzs: Sequence[float],
         labels: Optional[Sequence[str]] = None,
@@ -2214,7 +2369,7 @@ class MSICube:
         --------
         **1. Compare two specific samples around a single peak**
 
-        >>> cube.plot_mean_spectrum_windows(
+        >>> cube.plot_peak_windows(
         ...     peak_mzs=[885.55], 
         ...     labels=["Control_01", "Treated_01"],
         ...     span_da=0.5
@@ -2223,7 +2378,7 @@ class MSICube:
         **2. Inspect multiple peaks with a high-resolution window (ppm)**
 
         >>> # Useful for checking if peak picking was accurate
-        >>> cube.plot_mean_spectrum_windows(
+        >>> cube.plot_peak_windows(
         ...     peak_mzs=[184.07, 760.58, 885.55],
         ...     span_da=0.2,
         ...     tol_ppm=10.0,
@@ -2232,11 +2387,11 @@ class MSICube:
 
         **3. Fast overview of all samples**
 
-        >>> cube.plot_mean_spectrum_windows(peak_mzs=[550.8])
+        >>> cube.plot_peak_windows(peak_mzs=[550.8])
         """
         plot_mean_spectrum_windows(self, peak_mzs, labels, **kwargs)
 
-    def recalibration(
+    def recalibrate(
         self,
         database_mass_file: str,
         options: RecalibrationOptions,
@@ -2309,7 +2464,7 @@ class MSICube:
         ...     tol_da=0.01, 
         ...     n_peaks=20
         ... )
-        >>> cube.recalibration(
+        >>> cube.recalibrate(
         ...     database_mass_file="ref_masses.txt",
         ...     options=my_options,
         ...     n_workers=4
@@ -2319,7 +2474,7 @@ class MSICube:
 
         **2. Specifying a custom output path**
 
-        >>> cube.recalibration(
+        >>> cube.recalibrate(
         ...     database_mass_file="lipids.csv",
         ...     options=my_options,
         ...     output_directory="/external_drive/project_recalibrated"
@@ -2425,7 +2580,7 @@ class MSICube:
                 f"Recalibration failed for {len(failed_recalibrations)} samples: {', '.join(failed_recalibrations)}"
             )
 
-    def plot_recalibration_diagnostics(
+    def plot_recalibration(
         self,
         sample_name: str,
         database_mass_file: str,
@@ -2491,7 +2646,7 @@ class MSICube:
 
         >>> from msicube import RecalibrationOptions
         >>> options = RecalibrationOptions(tol_da=0.01, n_peaks=15)
-        >>> cube.plot_recalibration_diagnostics(
+        >>> cube.plot_recalibration(
         ...     sample_name="Sample_01",
         ...     database_mass_file="calibrants.txt",
         ...     options=options,
@@ -2500,7 +2655,7 @@ class MSICube:
 
         **2. Checking random pixels across a dataset**
 
-        >>> cube.plot_recalibration_diagnostics(
+        >>> cube.plot_recalibration(
         ...     sample_name="Sample_01",
         ...     database_mass_file="calibrants.txt",
         ...     options=options,
@@ -2744,7 +2899,7 @@ class MSICube:
 
         logger.info(f"Clustering complete: {res['n_clusters']} clusters found.")
 
-    def compute_kendrick_coordinates(
+    def compute_kendrick(
         self,
         *,
         mz_key: str = "mz",
@@ -2821,12 +2976,12 @@ class MSICube:
         --------
         **1. Standard CH2 Kendrick analysis**
         
-        >>> key = cube.compute_kendrick_coordinates(base="CH2")
+        >>> key = cube.compute_kendrick(base="CH2")
         >>> # Coordinates are now in cube.adata.varm['kendrick_CH2']
 
         **2. Analysis with a custom base and 1D storage**
         
-        >>> cube.compute_kendrick_coordinates(
+        >>> cube.compute_kendrick(
         ...     base="H2O", 
         ...     store_1d_in_var=True, 
         ...     var_prefix="water"
@@ -2887,7 +3042,7 @@ class MSICube:
             include_src_cols=include_src_cols,
         )
 
-    def manual_label_kendrick(
+    def annotate_kendrick(
         self,
         *,
         varm_key: str,
@@ -2913,7 +3068,7 @@ class MSICube:
         ----------
         varm_key : str
             The key in ``self.adata.varm`` containing the Kendrick coordinates 
-            calculated by :meth:`compute_kendrick_coordinates`.
+            calculated by :meth:`compute_kendrick`.
         label_key : str, default 'manual_label'
             The column name in ``self.adata.var`` where the assigned labels 
             will be stored.
@@ -2963,9 +3118,9 @@ class MSICube:
         **1. Interactive labeling of CH2 series**
         
         >>> # First, compute the coordinates
-        >>> cube.compute_kendrick_coordinates(base="CH2", varm_key="k_ch2")
+        >>> cube.compute_kendrick(base="CH2", varm_key="k_ch2")
         >>> # Launch the widget
-        >>> ui, state = cube.manual_label_kendrick(varm_key="k_ch2", label_key="lipid_family")
+        >>> ui, state = cube.annotate_kendrick(varm_key="k_ch2", label_key="lipid_family")
         >>> ui  # Display the widget in the notebook cell
         """
 
