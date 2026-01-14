@@ -495,7 +495,7 @@ class MSICube:
         )
 
     @classmethod
-    def from_saved_adata(
+    def from_file(
         cls,
         data_directory: str,
         adata_path: Optional[str] = None,
@@ -546,13 +546,13 @@ class MSICube:
         --------
         Load a project using default naming in the current directory:
 
-        >>> cube = MSICube.from_saved_adata("./my_project")
+        >>> cube = MSICube.from_file("./my_project")
         INFO: MSICube initialized with 5 samples found.
         INFO: AnnData loaded from ./my_project/adata.h5ad (format=h5ad).
 
         Load a project from a specific Zarr archive with lazy loading:
 
-        >>> cube = MSICube.from_saved_adata(
+        >>> cube = MSICube.from_file(
         ...     data_directory="./data",
         ...     adata_path="./results/final_cube.zarr",
         ...     file_format="zarr",
