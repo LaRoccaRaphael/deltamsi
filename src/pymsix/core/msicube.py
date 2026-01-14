@@ -1019,7 +1019,7 @@ class MSICube:
         self.adata.uns["mean_spectra_samples"] = list(self.org_imzml_path_dict.keys())
         logger.info("Mean spectra calculated and stored.")
 
-    def compute_global_mean_spectrum(self, **kwargs: Any) -> None:
+    def _compute_global_mean_spectrum(self, **kwargs: Any) -> None:
         """
         Compute a single global mean spectrum by combining all individual mean spectra.
 
@@ -1328,7 +1328,7 @@ class MSICube:
             the m/z value.
             * **binning_p** : *float, default 0.0001*
             The m/z precision used to evaluate peak local maxima. Should ideally 
-            match the `binning_p` used in ``compute_global_mean_spectrum``.
+            match the `binning_p` used in ``compute_mean_spectra(scope=global)``.
 
         Returns
         -------
