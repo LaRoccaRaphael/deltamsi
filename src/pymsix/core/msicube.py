@@ -1065,7 +1065,7 @@ class MSICube:
         ValueError
             If invalid options are provided or if required spectra are missing.
         RuntimeError
-            If ``compute_mean_spectra(scope=samples)`` has not been executed previously.
+            If ``compute_mean_spectra(scope="samples")`` has not been executed previously.
 
         Notes
         -----
@@ -1099,7 +1099,7 @@ class MSICube:
         """
         if self.adata is None or "mean_spectra" not in self.adata.uns:
             logger.error(
-                "Individual mean spectra not calculated yet. Run compute_mean_spectra(scope=samples) first."
+                "Individual mean spectra not calculated yet. Run compute_mean_spectra(scope='samples') first."
             )
             return
 
@@ -1328,7 +1328,7 @@ class MSICube:
             the m/z value.
             * **binning_p** : *float, default 0.0001*
             The m/z precision used to evaluate peak local maxima. Should ideally 
-            match the `binning_p` used in ``compute_mean_spectra(scope=global)``.
+            match the `binning_p` used in ``compute_mean_spectra(scope="global")``.
 
         Returns
         -------
