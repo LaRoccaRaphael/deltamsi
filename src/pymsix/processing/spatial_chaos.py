@@ -192,8 +192,8 @@ def spatial_chaos_score(
         P_tot += P_k
 
     if P_tot == 0:
-        # Should not happen if max_val > 0, but be safe
-        return np.nan
+        # No positive pixels across thresholds: define as zero chaos
+        return 0.0
 
     # 5) Spatial chaos score
     S = 1.0 - (C_tot / P_tot)
