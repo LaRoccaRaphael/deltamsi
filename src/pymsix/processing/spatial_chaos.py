@@ -135,7 +135,7 @@ def spatial_chaos_score(
     Returns
     -------
     float
-        The chaos score in $[0, 1]$. Returns ``np.nan`` if the image is empty.
+        The chaos score in $[0, 1]$. Returns ``0.0`` if the image has no signal.
 
     Notes
     -----
@@ -153,8 +153,8 @@ def spatial_chaos_score(
     # Ignore NaNs when computing max; treat NaNs as 0 elsewhere
     max_val = np.nanmax(im)
     if not np.isfinite(max_val) or max_val <= 0:
-        # No signal → undefined / non-informative score
-        return np.nan
+        # No signal → return zero chaos
+        return 0.0
 
     # 1) Normalization to [0, 1]
     im_norm = np.nan_to_num(im, nan=0.0) / max_val

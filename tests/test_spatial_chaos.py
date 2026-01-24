@@ -44,9 +44,11 @@ def _build_test_adata() -> ad.AnnData:
 def test_spatial_chaos_score_basic_cases() -> None:
     full_image = np.ones((2, 2))
     split_image = np.array([[1.0, 0.0], [0.0, 1.0]])
+    empty_image = np.zeros((2, 2))
 
     assert np.isclose(spatial_chaos_score(full_image, n_thresholds=5), 0.75)
     assert np.isclose(spatial_chaos_score(split_image, n_thresholds=5), 0.0)
+    assert np.isclose(spatial_chaos_score(empty_image, n_thresholds=5), 0.0)
 
 
 def test_compute_spatial_chaos_matrix_returns_per_sample_scores() -> None:
