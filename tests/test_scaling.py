@@ -79,9 +79,20 @@ def test_scale_ion_images_condition_copy(msicube_with_data: MSICube) -> None:
     )
 
 
+def test_scale_ion_images_layer_preserves_source(msicube_with_data: MSICube) -> None:
+    raw = msicube_with_data.adata.layers["RAW"].copy()
+    msicube_with_data.adata.X = np.full_like(raw, 10.0)
+
+    msicube_with_data.scale_ion_images_zscore(layer="RAW")
+
+    np.testing.assert_allclose(msicube_with_data.adata.layers["RAW"], raw)
+    np.testing.assert_allclose(
+        msicube_with_data.adata.X.mean(axis=0), np.zeros(2), atol=1e-6
+    )
+
+
 def test_scale_ion_images_condition_requires_column(msicube_with_data: MSICube) -> None:
     msicube_with_data.adata.obs = msicube_with_data.adata.obs.drop(columns=["condition"])
 
     with pytest.raises(KeyError):
         msicube_with_data.scale_ion_images_zscore(mode="per_condition")
-

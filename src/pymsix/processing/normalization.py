@@ -351,8 +351,8 @@ def scale_ion_images_zscore(
     layer : str, optional
         The source layer in ``adata.layers`` to scale. If None, uses ``adata.X``.
     output_layer : str, optional
-        The destination layer name for the scaled data. If None, the source data
-        is overwritten in-place.
+        The destination layer name for the scaled data. If None, the scaled data
+        are written to ``adata.X`` (the source layer is never modified).
     with_mean : bool, default True
         If True, center the data by subtracting the mean.
     with_std : bool, default True
@@ -469,6 +469,8 @@ def scale_ion_images_zscore(
 
     stats: ScaleStats = {}
 
+    preserve_source = output_layer is not None or layer is not None
+
     if sp.issparse(X):
         X_lil = X.tolil(copy=True)
         for g, m in groups.items():
@@ -482,7 +484,7 @@ def scale_ion_images_zscore(
 
         X_out = X_lil.tocsr()
     else:
-        X_out = np.asarray(X).astype(np.float32, copy=False)
+        X_out = np.asarray(X).astype(np.float32, copy=preserve_source)
         if not X_out.flags.writeable:
             X_out = X_out.copy()
 
@@ -496,10 +498,7 @@ def scale_ion_images_zscore(
             X_out[idx, :] = block
 
     if output_layer is None:
-        if layer is None:
-            obj.X = X_out
-        else:
-            obj.layers[layer] = X_out
+        obj.X = X_out
     else:
         obj.layers[output_layer] = X_out
 
