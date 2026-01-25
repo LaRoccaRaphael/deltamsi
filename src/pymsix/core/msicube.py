@@ -405,7 +405,7 @@ class MSICube:
         low_action: LowAction = "nan",
         high_action: HighAction = "clip",
         layer: Optional[str] = None,
-        result_layer: Optional[str] = None,
+        output_layer: Optional[str] = None,
         copy: bool = False,
     ) -> Optional[ad.AnnData]:
         """
@@ -440,9 +440,10 @@ class MSICube:
         layer : str, optional
             The key in ``adata.layers`` to process. If None, operates on the 
             main data matrix ``adata.X``.
-        result_layer : str, optional
+        output_layer : str, optional
             The key in ``adata.layers`` where the processed matrix will be stored. 
-            If None, the input `layer` (or `X`) is overwritten in-place.
+            If None, the processed data are written to ``adata.X`` (the source
+            layer is never modified).
         copy : bool, default False
             If True, returns a new AnnData object with the modified data. 
             If False, modifies the current :attr:`adata` instance and returns None.
@@ -482,7 +483,7 @@ class MSICube:
         >>> cube.clip_or_mask_intensities(
         ...     low=10.0, 
         ...     low_action="zero", 
-        ...     result_layer="denoised"
+        ...     output_layer="denoised"
         ... )
 
         Use the 'move' action to subtract background and return a copy:
@@ -500,7 +501,7 @@ class MSICube:
             low_action=low_action,
             high_action=high_action,
             layer=layer,
-            result_layer=result_layer,
+            output_layer=output_layer,
             copy=copy,
         )
 
@@ -579,6 +580,7 @@ class MSICube:
         *,
         base: Optional[float] = None,
         layer: Optional[str] = None,
+        output_layer: Optional[str] = None,
         copy: bool = False,
     ) -> Optional["MSICube"]:
         """
@@ -600,6 +602,10 @@ class MSICube:
         layer : str, optional
             The specific layer in ``adata.layers`` to transform. If None, the 
             main matrix ``adata.X`` is used.
+        output_layer : str, optional
+            The destination layer name for the transformed data. If None, the
+            transformed data are written to ``adata.X`` (the source layer is never
+            modified).
         copy : bool, default False
             Whether to return a new MSICube instance. 
             
@@ -634,10 +640,17 @@ class MSICube:
 
         Return a new cube with log2 transformation for a specific layer:
 
-        >>> new_cube = cube.log1p_intensity(base=2.0, layer="raw", copy=True)
+        >>> new_cube = cube.log1p_intensity(
+        ...     base=2.0,
+        ...     layer="raw",
+        ...     output_layer="log2",
+        ...     copy=True,
+        ... )
         >>> # The original 'cube' remains unchanged.
         """
-        return log1p_intensity_processing(self, base=base, layer=layer, copy=copy)
+        return log1p_intensity_processing(
+            self, base=base, layer=layer, output_layer=output_layer, copy=copy
+        )
 
     def compute_cosine_colocalization(
         self, *, params: CosineColocParams = CosineColocParams()
@@ -1874,6 +1887,7 @@ class MSICube:
         *,
         target_sum: float = 1e6,
         layer: Optional[str] = None,
+        output_layer: Optional[str] = None,
         store_tic_in_obs: Optional[str] = "tic",
         copy: bool = False,
     ) -> Optional["MSICube"]:
@@ -1896,6 +1910,10 @@ class MSICube:
         layer : str, optional
             The specific layer in ``adata.layers`` to normalize. If None, the 
             main matrix ``adata.X`` is used.
+        output_layer : str, optional
+            The destination layer name for the normalized data. If None, the
+            normalized data are written to ``adata.X`` (the source layer is never
+            modified).
         store_tic_in_obs : str, optional, default 'tic'
             Key in ``adata.obs`` used to store the original TIC values (the sum 
             of intensities per pixel before normalization). This is useful 
@@ -1936,6 +1954,7 @@ class MSICube:
         >>> normalized_cube = cube.normalize_tic(
         ...     layer="raw", 
         ...     target_sum=1e6, 
+        ...     output_layer="tic_normalized",
         ...     copy=True
         ... )
         >>> # The original cube.X remains unchanged.
@@ -1945,6 +1964,7 @@ class MSICube:
             self,
             target_sum=target_sum,
             layer=layer,
+            output_layer=output_layer,
             store_tic_in_obs=store_tic_in_obs,
             copy=copy,
         )

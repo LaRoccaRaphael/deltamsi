@@ -73,6 +73,7 @@ def log1p_intensity(
     *,
     base: Optional[float] = None,
     layer: Optional[str] = None,
+    output_layer: Optional[str] = None,
     copy: bool = False,
 ) -> Optional["MSICube"]:
     """
@@ -94,6 +95,10 @@ def log1p_intensity(
     layer : str, optional
         The specific layer in ``adata.layers`` to transform. If None, the
         main matrix ``adata.X`` is used.
+    output_layer : str, optional
+        The destination layer name for the transformed data. If None, the
+        transformed data are written to ``adata.X`` (the source layer is never
+        modified).
     copy : bool, default False
         Whether to return a new MSICube instance.
 
@@ -136,16 +141,30 @@ def log1p_intensity(
     if layer is None:
         if adata_obj.X is None:
             raise ValueError("MSICube.adata.X is None.")
-        adata_obj.X = _log1p_inplace_or_copy(adata_obj.X, base=base)
+        X = adata_obj.X
     else:
         if layer not in adata_obj.layers:
             raise KeyError(f"Layer '{layer}' not found in adata.layers")
-        adata_obj.layers[layer] = _log1p_inplace_or_copy(
-            adata_obj.layers[layer], base=base
-        )
+        X = adata_obj.layers[layer]
+
+    preserve_source = layer is not None or output_layer is not None
+    if sp.issparse(X):
+        X_out = _log1p_inplace_or_copy(X, base=base)
+    else:
+        X_arr = np.asarray(X)
+        if preserve_source:
+            X_arr = X_arr.copy()
+        X_out = _log1p_inplace_or_copy(X_arr, base=base)
+
+    if output_layer is None:
+        adata_obj.X = X_out
+    else:
+        adata_obj.layers[output_layer] = X_out
 
     adata_obj.uns.setdefault("log1p", {})
-    adata_obj.uns["log1p"]["base"] = base
+    adata_obj.uns["log1p"].update(
+        {"base": base, "layer": layer, "output_layer": output_layer}
+    )
 
     return target_cube if copy else None
 
@@ -158,7 +177,7 @@ def clip_or_mask_intensities(
     low_action: LowAction = "nan",
     high_action: HighAction = "clip",
     layer: Optional[str] = None,
-    result_layer: Optional[str] = None,
+    output_layer: Optional[str] = None,
     copy: bool = False,
 ) -> Optional[ad.AnnData]:
     """
@@ -193,9 +212,10 @@ def clip_or_mask_intensities(
     layer : str, optional
         The key in ``adata.layers`` to process. If None, operates on the
         main data matrix ``adata.X``.
-    result_layer : str, optional
+    output_layer : str, optional
         The key in ``adata.layers`` where the processed matrix will be stored.
-        If None, the input `layer` (or `X`) is overwritten in-place.
+        If None, the processed data are written to ``adata.X`` (the source
+        layer is never modified).
     copy : bool, default False
         If True, returns a new AnnData object with the modified data.
         If False, modifies the current :attr:`adata` instance and returns None.
@@ -293,18 +313,16 @@ def clip_or_mask_intensities(
 
         X_out = X_arr
 
-    if result_layer is None and layer is None:
+    if output_layer is None:
         obj.X = X_out
-    elif result_layer is None and layer is not None:
-        obj.layers[layer] = X_out
     else:
-        obj.layers[result_layer] = X_out
+        obj.layers[output_layer] = X_out
 
     obj.uns.setdefault("intensity_clipping", [])
     obj.uns["intensity_clipping"].append(
         {
             "layer": layer,
-            "result_layer": result_layer,
+            "output_layer": output_layer,
             "low": None if low is None else float(low),
             "high": None if high is None else float(high),
             "low_action": low_action,
@@ -529,6 +547,7 @@ def tic_normalize_msicube(
     *,
     target_sum: float = 1e6,
     layer: Optional[str] = None,
+    output_layer: Optional[str] = None,
     store_tic_in_obs: Optional[str] = "tic",
     copy: bool = False,
 ) -> Optional["MSICube"]:
@@ -548,6 +567,10 @@ def tic_normalize_msicube(
         Setting this to 1.0 results in fractional abundance values.
     layer : str, optional
         The specific AnnData layer to normalize. If None, normalizes ``adata.X``.
+    output_layer : str, optional
+        The destination layer name for the normalized data. If None, the
+        normalized data are written to ``adata.X`` (the source layer is never
+        modified).
     store_tic_in_obs : str, optional, default "tic"
         Key used to save the original TIC values (before normalization) in 
         ``adata.obs``. This is useful for quality control.
@@ -627,12 +650,18 @@ def tic_normalize_msicube(
 
         X_norm = X_arr * scale[:, None]
 
-    if layer is None:
+    if output_layer is None:
         adata.X = X_norm
     else:
-        adata.layers[layer] = X_norm
+        adata.layers[output_layer] = X_norm
 
     adata.uns.setdefault("tic_normalize", {})
-    adata.uns["tic_normalize"].update({"target_sum": float(target_sum), "layer": layer})
+    adata.uns["tic_normalize"].update(
+        {
+            "target_sum": float(target_sum),
+            "layer": layer,
+            "output_layer": output_layer,
+        }
+    )
 
     return obj if copy else None
