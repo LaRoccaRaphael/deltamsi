@@ -304,7 +304,17 @@ class MSICube:
             )
 
         if file_format == "h5ad":
-            self.adata.write_h5ad(save_path, **kwargs)
+            try:
+                self.adata.write_h5ad(save_path, **kwargs)
+            except RuntimeError as exc:
+                if "allow_write_nullable_strings" not in str(exc):
+                    raise
+                previous_setting = ad.settings.allow_write_nullable_strings
+                ad.settings.allow_write_nullable_strings = True
+                try:
+                    self.adata.write_h5ad(save_path, **kwargs)
+                finally:
+                    ad.settings.allow_write_nullable_strings = previous_setting
         else:
             self.adata.write_zarr(save_path, **kwargs)
 
