@@ -82,6 +82,11 @@ from pymsix.processing.mass_clustering import (
 from pymsix.processing.kendrick import compute_kendrick_varm
 from pymsix.processing.mass_neighbors import direct_mass_neighbors
 from pymsix.processing.discriminant_analysis import rank_ions_groups_msi
+from pymsix.processing.preprocessing import (
+    msi_cap_hotspots as msi_cap_hotspots_processing,
+    msi_median_filter_2d as msi_median_filter_2d_processing,
+    msi_threshold_quantile as msi_threshold_quantile_processing,
+)
 from pymsix.processing.mz_matching import (
     match_mzs_to_var_simple as match_mzs_to_var_simple_processing,
 )
@@ -650,6 +655,100 @@ class MSICube:
         """
         return log1p_intensity_processing(
             self, base=base, layer=layer, output_layer=output_layer, copy=copy
+        )
+
+    def msi_cap_hotspots(
+        self,
+        *,
+        q: float = 0.99,
+        layer: Optional[str] = None,
+        output_layer: Optional[str] = None,
+        chunk_size: int = 256,
+        dtype: Union[str, np.dtype] = "float32",
+    ) -> None:
+        """
+        Cap ion images at a specific quantile to eliminate pixel hotspots.
+
+        This is a convenience wrapper around
+        :func:`pymsix.processing.preprocessing.msi_cap_hotspots` that operates
+        on ``self.adata``.
+        """
+
+        msi_cap_hotspots_processing(
+            self,
+            q=q,
+            layer=layer,
+            output_layer=output_layer,
+            chunk_size=chunk_size,
+            dtype=dtype,
+        )
+
+    def msi_threshold_quantile(
+        self,
+        *,
+        q: float = 0.5,
+        mode: Literal["zero", "nan"] = "zero",
+        layer: Optional[str] = None,
+        output_layer: Optional[str] = None,
+        chunk_size: int = 256,
+        dtype: Union[str, np.dtype] = "float32",
+    ) -> None:
+        """
+        Threshold ion images at the per-variable quantile ``q``.
+
+        This is a convenience wrapper around
+        :func:`pymsix.processing.preprocessing.msi_threshold_quantile` that
+        operates on ``self.adata``.
+        """
+
+        msi_threshold_quantile_processing(
+            self,
+            q=q,
+            mode=mode,
+            layer=layer,
+            output_layer=output_layer,
+            chunk_size=chunk_size,
+            dtype=dtype,
+        )
+
+    def msi_median_filter_2d(
+        self,
+        *,
+        size: int = 3,
+        layer: Optional[str] = None,
+        output_layer: Optional[str] = None,
+        dtype: Union[str, np.dtype] = "float32",
+        x_key: str = "x",
+        y_key: str = "y",
+        spatial_key: str = "spatial",
+        shape: Optional[Tuple[int, int]] = None,
+        origin: Literal["min", "zero"] = "min",
+        fill_value: float = 0.0,
+        nan_to_num_before: bool = True,
+        chunk_size: int = 64,
+    ) -> None:
+        """
+        Apply a 2D median filter to each ion image.
+
+        This is a convenience wrapper around
+        :func:`pymsix.processing.preprocessing.msi_median_filter_2d` that
+        operates on ``self.adata``.
+        """
+
+        msi_median_filter_2d_processing(
+            self,
+            size=size,
+            layer=layer,
+            output_layer=output_layer,
+            dtype=dtype,
+            x_key=x_key,
+            y_key=y_key,
+            spatial_key=spatial_key,
+            shape=shape,
+            origin=origin,
+            fill_value=fill_value,
+            nan_to_num_before=nan_to_num_before,
+            chunk_size=chunk_size,
         )
 
     def compute_cosine_colocalization(

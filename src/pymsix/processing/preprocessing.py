@@ -18,12 +18,6 @@ import numpy as np
 import scipy.sparse as sp
 from scipy import ndimage
 
-from pymsix.params.options import (
-    MSIHotspotCapParams,
-    MSIMedianFilterParams,
-    MSIThresholdParams,
-)
-
 if TYPE_CHECKING:  # pragma: no cover
     from pymsix.core.msicube import MSICube
 
@@ -180,7 +174,13 @@ def _infer_grid_index(
 
 
 def msi_cap_hotspots(
-    msicube: "MSICube", *, params: MSIHotspotCapParams = MSIHotspotCapParams()
+    msicube: "MSICube",
+    *,
+    q: float = 0.99,
+    layer: Optional[str] = None,
+    output_layer: Optional[str] = None,
+    chunk_size: int = 256,
+    dtype: Union[str, np.dtype] = "float32",
 ) -> None:
     """
     Cap ion images at a specific quantile to eliminate pixel hotspots.
@@ -190,25 +190,44 @@ def msi_cap_hotspots(
     `q`-th quantile (default 99%), ensuring that visualizations are not 
     dominated by a few outlier pixels.
 
-    
+    Parameters
+    ----------
+    q : float, default 0.99
+        Quantile threshold (0.0 to 1.0). Intensities above this value
+        will be clipped to the quantile value.
+    layer : str, optional
+        The AnnData layer to process. If None, uses ``adata.X``.
+    output_layer : str, optional
+        The layer to store results. If None, overwrites the input.
+    chunk_size : int, default 256
+        Number of ion images to process simultaneously to optimize memory.
+    dtype : str or np.dtype, default "float32"
+        The numerical precision for processing.
     """
 
-    X = _ensure_dense_float(_get_matrix(msicube, params.layer_in), dtype=np.dtype(params.dtype))
+    X = _ensure_dense_float(_get_matrix(msicube, layer), dtype=np.dtype(dtype))
     _, n_vars = X.shape
 
-    Xo = X if params.layer_out == params.layer_in else X.copy()
+    Xo = X.copy()
 
-    for start in range(0, n_vars, params.chunk_size):
-        end = min(n_vars, start + params.chunk_size)
+    for start in range(0, n_vars, chunk_size):
+        end = min(n_vars, start + chunk_size)
         block = Xo[:, start:end]
-        caps = np.quantile(block, params.q, axis=0)
+        caps = np.quantile(block, q, axis=0)
         np.minimum(block, caps[None, :], out=block)
 
-    _set_matrix(msicube, params.layer_out, Xo)
+    _set_matrix(msicube, output_layer, Xo)
 
 
 def msi_threshold_quantile(
-    msicube: "MSICube", *, params: MSIThresholdParams = MSIThresholdParams()
+    msicube: "MSICube",
+    *,
+    q: float = 0.5,
+    mode: Literal["zero", "nan"] = "zero",
+    layer: Optional[str] = None,
+    output_layer: Optional[str] = None,
+    chunk_size: int = 256,
+    dtype: Union[str, np.dtype] = "float32",
 ) -> None:
     """
     Threshold ion images at the per-variable quantile ``q``.
@@ -216,28 +235,56 @@ def msi_threshold_quantile(
     This is a data-driven way to perform background subtraction. For each 
     ion image, a threshold is calculated based on its own intensity 
     distribution. Intensities below this limit are masked.
+
+    Parameters
+    ----------
+    q : float, default 0.5
+        The quantile below which intensities are removed.
+    mode : {"zero", "nan"}, default "zero"
+        Whether to set values below threshold to 0.0 or NaN.
+    layer : str, optional
+        Input layer in AnnData. If None, uses ``adata.X``.
+    output_layer : str, optional
+        Output layer in AnnData. If None, overwrites the input.
+    chunk_size : int, default 256
+        Number of variables processed in a single block.
+    dtype : str or np.dtype, default "float32"
+        The numerical precision for processing.
     """
 
-    X = _ensure_dense_float(_get_matrix(msicube, params.layer_in), dtype=np.dtype(params.dtype))
+    X = _ensure_dense_float(_get_matrix(msicube, layer), dtype=np.dtype(dtype))
     _, n_vars = X.shape
 
-    Xo = X if params.layer_out == params.layer_in else X.copy()
+    Xo = X.copy()
 
-    for start in range(0, n_vars, params.chunk_size):
-        end = min(n_vars, start + params.chunk_size)
+    for start in range(0, n_vars, chunk_size):
+        end = min(n_vars, start + chunk_size)
         block = Xo[:, start:end]
-        thr = np.quantile(block, params.q, axis=0)
+        thr = np.quantile(block, q, axis=0)
         mask = block < thr[None, :]
-        if params.mode == "zero":
+        if mode == "zero":
             block[mask] = 0.0
         else:
             block[mask] = np.nan
 
-    _set_matrix(msicube, params.layer_out, Xo)
+    _set_matrix(msicube, output_layer, Xo)
 
 
 def msi_median_filter_2d(
-    msicube: "MSICube", *, params: MSIMedianFilterParams = MSIMedianFilterParams()
+    msicube: "MSICube",
+    *,
+    size: int = 3,
+    layer: Optional[str] = None,
+    output_layer: Optional[str] = None,
+    dtype: Union[str, np.dtype] = "float32",
+    x_key: str = "x",
+    y_key: str = "y",
+    spatial_key: str = "spatial",
+    shape: Optional[Tuple[int, int]] = None,
+    origin: Literal["min", "zero"] = "min",
+    fill_value: float = 0.0,
+    nan_to_num_before: bool = True,
+    chunk_size: int = 64,
 ) -> None:
     """
     Apply a 2D median filter to each ion image.
@@ -250,10 +297,28 @@ def msi_median_filter_2d(
     ----------
     msicube : MSICube
         The data cube to filter.
-    params : MSIMedianFilterParams
-        Configuration including:
-        * **size**: The kernel size (e.g., 3 for a 3x3 window).
-        * **x_key / y_key**: Coordinates used to reconstruct the 2D image.
+    size : int, default 3
+        The side length of the square median window (e.g., 3 for 3x3).
+    layer : str, optional
+        Source layer name. If None, uses ``adata.X``.
+    output_layer : str, optional
+        Destination layer name. If None, overwrites the input.
+    dtype : str or np.dtype, default "float32"
+        The numerical precision for processing.
+    x_key, y_key : str
+        Metadata keys for pixel coordinates.
+    spatial_key : str
+        Key for the spatial coordinate matrix in ``obsm``.
+    shape : tuple, optional
+        Explicit (Height, Width) for the spatial grid.
+    origin : {"min", "zero"}
+        Whether to offset coordinates to (0,0).
+    fill_value : float, default 0.0
+        Value used for pixels with no data in a non-rectangular grid.
+    nan_to_num_before : bool, default True
+        If True, replaces NaN values with `fill_value` before filtering.
+    chunk_size : int, default 64
+        Number of images processed per block. Keep low for large spatial grids.
 
     Notes
     -----
@@ -263,40 +328,40 @@ def msi_median_filter_2d(
     
     """
 
-    X = _ensure_dense_float(_get_matrix(msicube, params.layer_in), dtype=np.dtype(params.dtype))
+    X = _ensure_dense_float(_get_matrix(msicube, layer), dtype=np.dtype(dtype))
     _, n_vars = X.shape
 
     H, W, flat = _infer_grid_index(
         msicube,
-        x_key=params.x_key,
-        y_key=params.y_key,
-        spatial_key=params.spatial_key,
-        shape=params.shape,
-        origin=params.origin,
+        x_key=x_key,
+        y_key=y_key,
+        spatial_key=spatial_key,
+        shape=shape,
+        origin=origin,
     )
     HW = H * W
 
-    Xo = X if params.layer_out == params.layer_in else X.copy()
+    Xo = X.copy()
 
-    for start in range(0, n_vars, params.chunk_size):
-        end = min(n_vars, start + params.chunk_size)
+    for start in range(0, n_vars, chunk_size):
+        end = min(n_vars, start + chunk_size)
         block = Xo[:, start:end]
 
-        if params.nan_to_num_before:
+        if nan_to_num_before:
             block = np.nan_to_num(
                 block,
-                nan=params.fill_value,
-                posinf=params.fill_value,
-                neginf=params.fill_value,
+                nan=fill_value,
+                posinf=fill_value,
+                neginf=fill_value,
             )
 
-        cube = np.full((end - start, HW), params.fill_value, dtype=block.dtype)
+        cube = np.full((end - start, HW), fill_value, dtype=block.dtype)
         cube[:, flat] = block.T
         cube = cube.reshape((end - start, H, W))
 
-        cube_f = ndimage.median_filter(cube, size=(1, params.size, params.size), mode="nearest")
+        cube_f = ndimage.median_filter(cube, size=(1, size, size), mode="nearest")
 
         block_out = cube_f.reshape((end - start, HW))[:, flat]
         Xo[:, start:end] = block_out.T
 
-    _set_matrix(msicube, params.layer_out, Xo)
+    _set_matrix(msicube, output_layer, Xo)
