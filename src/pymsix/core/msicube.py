@@ -37,6 +37,7 @@ MSICube
 """
 
 from concurrent.futures import ProcessPoolExecutor
+import json
 import os
 import re
 import anndata as ad
@@ -309,17 +310,32 @@ class MSICube:
             )
 
         if file_format == "h5ad":
+            restore_intensity_clipping = None
+            intensity_clipping = self.adata.uns.get("intensity_clipping")
+            if (
+                isinstance(intensity_clipping, list)
+                and intensity_clipping
+                and all(isinstance(item, dict) for item in intensity_clipping)
+            ):
+                restore_intensity_clipping = intensity_clipping
+                self.adata.uns["intensity_clipping"] = [
+                    json.dumps(item, default=str) for item in intensity_clipping
+                ]
             try:
-                self.adata.write_h5ad(save_path, **kwargs)
-            except RuntimeError as exc:
-                if "allow_write_nullable_strings" not in str(exc):
-                    raise
-                previous_setting = ad.settings.allow_write_nullable_strings
-                ad.settings.allow_write_nullable_strings = True
                 try:
                     self.adata.write_h5ad(save_path, **kwargs)
-                finally:
-                    ad.settings.allow_write_nullable_strings = previous_setting
+                except RuntimeError as exc:
+                    if "allow_write_nullable_strings" not in str(exc):
+                        raise
+                    previous_setting = ad.settings.allow_write_nullable_strings
+                    ad.settings.allow_write_nullable_strings = True
+                    try:
+                        self.adata.write_h5ad(save_path, **kwargs)
+                    finally:
+                        ad.settings.allow_write_nullable_strings = previous_setting
+            finally:
+                if restore_intensity_clipping is not None:
+                    self.adata.uns["intensity_clipping"] = restore_intensity_clipping
         else:
             self.adata.write_zarr(save_path, **kwargs)
 
