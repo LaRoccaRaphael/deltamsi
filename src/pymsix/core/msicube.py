@@ -1789,8 +1789,8 @@ class MSICube:
         layer : str, optional
             The source layer in ``adata.layers`` to scale. If None, uses ``adata.X``.
         output_layer : str, optional
-            The destination layer name for the scaled data. If None, the source data 
-            is overwritten in-place.
+            The destination layer name for the scaled data. If None, the scaled data
+            are written to ``adata.X`` (the source layer is never modified).
         with_mean : bool, default True
             If True, center the data by subtracting the mean.
         with_std : bool, default True
