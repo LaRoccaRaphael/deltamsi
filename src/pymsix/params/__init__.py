@@ -8,9 +8,6 @@ from .options import (
     KendrickPlotOptions,
     RecalParams,
     CosineColocParams,
-    MSIHotspotCapParams,
-    MSIThresholdParams,
-    MSIMedianFilterParams,
     RankIonsMSIParams,
 )
 
@@ -24,8 +21,5 @@ __all__ = [
     "KendrickPlotOptions",
     "RecalParams",
     "CosineColocParams",
-    "MSIHotspotCapParams",
-    "MSIThresholdParams",
-    "MSIMedianFilterParams",
     "RankIonsMSIParams",
 ]
