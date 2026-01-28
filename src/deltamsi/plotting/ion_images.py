@@ -121,7 +121,7 @@ def plot_ion_images(
 
         import numpy as np
         import matplotlib.pyplot as plt
-        from pymsix import MSICube
+        from deltamsi import MSICube
         import anndata
 
         # Create dummy MSI data
@@ -135,7 +135,7 @@ def plot_ion_images(
         cube = MockCube(); cube.adata = adata
 
         # Plot two m/z values
-        from pymsix.plotting.ion_images import plot_ion_images
+        from deltamsi.plotting.ion_images import plot_ion_images
         plot_ion_images(cube, mz=[100.0, 500.0], samples="Sample_A", ncols=2)
     """
 

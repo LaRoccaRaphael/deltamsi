@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 import anndata as ad
 from unittest.mock import MagicMock, patch
-from pymsix.core.msicube import MSICube
-from pymsix.plotting.spectrum import plot_mean_spectrum_windows
+from deltamsi.core.msicube import MSICube
+from deltamsi.plotting.spectrum import plot_mean_spectrum_windows
 from typing import Any
 
 
@@ -46,7 +46,7 @@ def test_plot_mean_spectrum_windows_missing_sample(
     """Test that missing samples are skipped and warned, but plotting continues."""
     # We patch the core function to verify it receives only valid data
     with patch(
-        "pymsix.plotting.spectrum._plot_mean_spectrum_windows_core"
+        "deltamsi.plotting.spectrum._plot_mean_spectrum_windows_core"
     ) as mock_core:
         plot_mean_spectrum_windows(
             cube_with_spectra,

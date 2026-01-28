@@ -16,7 +16,7 @@ import numpy as np
 from typing import Iterable, Tuple, List
 from scipy.interpolate import interp1d
 
-from pymsix.params.options import GlobalMeanSpectrumOptions
+from deltamsi.params.options import GlobalMeanSpectrumOptions
 
 # Define Spectrum type
 Spectrum = Tuple[np.ndarray, np.ndarray]
@@ -77,8 +77,8 @@ def combine_mean_spectra(
 
     Examples
     --------
-    >>> from pymsix.params.options import GlobalMeanSpectrumOptions
-    >>> from pymsix.processing.spectra import combine_mean_spectra
+    >>> from deltamsi.params.options import GlobalMeanSpectrumOptions
+    >>> from deltamsi.processing.spectra import combine_mean_spectra
     >>> 
     >>> # Configure averaging options
     >>> opts = GlobalMeanSpectrumOptions(binning_p=0.0001, tic_normalize=True)

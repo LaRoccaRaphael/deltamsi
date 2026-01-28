@@ -1,7 +1,7 @@
-pymsix.processing package
+deltamsi.processing package
 =========================
 
-.. automodule:: pymsix.processing
+.. automodule:: deltamsi.processing
    :members:
    :show-inheritance:
    :undoc-members:
@@ -9,122 +9,122 @@ pymsix.processing package
 Submodules
 ----------
 
-pymsix.processing.aggregation module
+deltamsi.processing.aggregation module
 ------------------------------------
 
-.. automodule:: pymsix.processing.aggregation
+.. automodule:: deltamsi.processing.aggregation
    :members:
    :show-inheritance:
    :undoc-members:
 
-pymsix.processing.colocalization module
+deltamsi.processing.colocalization module
 ---------------------------------------
 
-.. automodule:: pymsix.processing.colocalization
+.. automodule:: deltamsi.processing.colocalization
    :members:
    :show-inheritance:
    :undoc-members:
 
-pymsix.processing.combine\_mean\_spectra module
+deltamsi.processing.combine\_mean\_spectra module
 -----------------------------------------------
 
-.. automodule:: pymsix.processing.combine_mean_spectra
+.. automodule:: deltamsi.processing.combine_mean_spectra
    :members:
    :show-inheritance:
    :undoc-members:
 
-pymsix.processing.discriminant\_analysis module
+deltamsi.processing.discriminant\_analysis module
 -----------------------------------------------
 
-.. automodule:: pymsix.processing.discriminant_analysis
+.. automodule:: deltamsi.processing.discriminant_analysis
    :members:
    :show-inheritance:
    :undoc-members:
 
-pymsix.processing.kendrick module
+deltamsi.processing.kendrick module
 ---------------------------------
 
-.. automodule:: pymsix.processing.kendrick
+.. automodule:: deltamsi.processing.kendrick
    :members:
    :show-inheritance:
    :undoc-members:
 
-pymsix.processing.mass\_clustering module
+deltamsi.processing.mass\_clustering module
 -----------------------------------------
 
-.. automodule:: pymsix.processing.mass_clustering
+.. automodule:: deltamsi.processing.mass_clustering
    :members:
    :show-inheritance:
    :undoc-members:
 
-pymsix.processing.mean\_spectrum module
+deltamsi.processing.mean\_spectrum module
 ---------------------------------------
 
-.. automodule:: pymsix.processing.mean_spectrum
+.. automodule:: deltamsi.processing.mean_spectrum
    :members:
    :show-inheritance:
    :undoc-members:
 
-pymsix.processing.normalization module
+deltamsi.processing.normalization module
 --------------------------------------
 
-.. automodule:: pymsix.processing.normalization
+.. automodule:: deltamsi.processing.normalization
    :members:
    :show-inheritance:
    :undoc-members:
 
-pymsix.processing.peak\_picking module
+deltamsi.processing.peak\_picking module
 --------------------------------------
 
-.. automodule:: pymsix.processing.peak_picking
+.. automodule:: deltamsi.processing.peak_picking
    :members:
    :show-inheritance:
    :undoc-members:
 
-pymsix.processing.preprocessing module
+deltamsi.processing.preprocessing module
 --------------------------------------
 
-.. automodule:: pymsix.processing.preprocessing
+.. automodule:: deltamsi.processing.preprocessing
    :members:
    :show-inheritance:
    :undoc-members:
 
-pymsix.processing.recal\_visu\_clean module
+deltamsi.processing.recal\_visu\_clean module
 -------------------------------------------
 
-.. automodule:: pymsix.processing.recal_visu_clean
+.. automodule:: deltamsi.processing.recal_visu_clean
    :members:
    :show-inheritance:
    :undoc-members:
 
-pymsix.processing.recalibration\_DEPRECATED module
+deltamsi.processing.recalibration\_DEPRECATED module
 --------------------------------------------------
 
-.. automodule:: pymsix.processing.recalibration_DEPRECATED
+.. automodule:: deltamsi.processing.recalibration_DEPRECATED
    :members:
    :show-inheritance:
    :undoc-members:
 
-pymsix.processing.recalibration\_cli\_clean module
+deltamsi.processing.recalibration\_cli\_clean module
 --------------------------------------------------
 
-.. automodule:: pymsix.processing.recalibration_cli_clean
+.. automodule:: deltamsi.processing.recalibration_cli_clean
    :members:
    :show-inheritance:
    :undoc-members:
 
-pymsix.processing.recalibration\_core module
+deltamsi.processing.recalibration\_core module
 --------------------------------------------
 
-.. automodule:: pymsix.processing.recalibration_core
+.. automodule:: deltamsi.processing.recalibration_core
    :members:
    :show-inheritance:
    :undoc-members:
 
-pymsix.processing.spatial\_chaos module
+deltamsi.processing.spatial\_chaos module
 ---------------------------------------
 
-.. automodule:: pymsix.processing.spatial_chaos
+.. automodule:: deltamsi.processing.spatial_chaos
    :members:
    :show-inheritance:
    :undoc-members:

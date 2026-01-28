@@ -1,6 +1,6 @@
 import numpy as np
 
-from pymsix.processing.kendrick import _parse_formula_to_mass, kendrick_coords
+from deltamsi.processing.kendrick import _parse_formula_to_mass, kendrick_coords
 
 
 def test_parse_formula_simple_grouping():

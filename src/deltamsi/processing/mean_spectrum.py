@@ -18,7 +18,7 @@ from pyimzml.ImzMLParser import ImzMLParser
 from scipy.stats import norm
 from scipy.signal import fftconvolve
 
-from pymsix.params.options import MeanSpectrumOptions
+from deltamsi.params.options import MeanSpectrumOptions
 
 
 def _smooth_centroid_constant_da(
@@ -189,8 +189,8 @@ def compute_mean_spectrum(
 
     Examples
     --------
-    >>> from pymsix.params.options import MeanSpectrumOptions
-    >>> from pymsix.processing.spectra import compute_mean_spectrum
+    >>> from deltamsi.params.options import MeanSpectrumOptions
+    >>> from deltamsi.processing.spectra import compute_mean_spectrum
     >>> 
     >>> opts = MeanSpectrumOptions(min_mz=100, max_mz=1000, binning_p=0.001)
     >>> mz, intensities = compute_mean_spectrum("sample.imzML", options=opts)

@@ -1,6 +1,6 @@
 import numpy as np
 
-from pymsix.processing.mass_clustering import cluster_masses_from_colocalization
+from deltamsi.processing.mass_clustering import cluster_masses_from_colocalization
 
 
 def test_coloc_clustering_threshold_splits_components():

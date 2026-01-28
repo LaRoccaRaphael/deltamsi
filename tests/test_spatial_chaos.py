@@ -2,8 +2,8 @@ import numpy as np
 import pandas as pd
 import anndata as ad
 
-from pymsix.core.msicube import MSICube
-from pymsix.processing.spatial_chaos import (
+from deltamsi.core.msicube import MSICube
+from deltamsi.processing.spatial_chaos import (
     compute_spatial_chaos_matrix,
     spatial_chaos_fold_change_from_adata,
     spatial_chaos_score,

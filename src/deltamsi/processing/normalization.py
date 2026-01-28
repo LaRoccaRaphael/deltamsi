@@ -21,7 +21,7 @@ import numpy as np
 import scipy.sparse as sp
 
 if TYPE_CHECKING:  # pragma: no cover
-    from pymsix.core.msicube import MSICube
+    from deltamsi.core.msicube import MSICube
 
 
 ScaleMode = Literal["all", "per_sample", "per_condition"]
@@ -128,7 +128,7 @@ def log1p_intensity(
         raise ValueError("MSICube.adata is None. Run data extraction first.")
 
     if copy:
-        from pymsix.core.msicube import MSICube
+        from deltamsi.core.msicube import MSICube
 
         target_cube = MSICube(msicube.data_directory)
         target_cube.org_imzml_path_dict = msicube.org_imzml_path_dict.copy()
@@ -606,7 +606,7 @@ def tic_normalize_msicube(
 
     Examples
     --------
-    >>> from pymsix.processing.normalization import tic_normalize_msicube
+    >>> from deltamsi.processing.normalization import tic_normalize_msicube
     >>> # Normalize in-place to a target sum of 100
     >>> tic_normalize_msicube(msicube, target_sum=100.0)
     >>> # The original TIC values are now stored in msicube.adata.obs['tic']

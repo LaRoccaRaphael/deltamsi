@@ -32,15 +32,15 @@ Notes
 The implementation of the logic defined by these options resides in 
 dedicated submodules:
 
-    * ``pymsix.core.msicube``
-    * ``pymsix.processing.combine_mean_spectra``
-    * ``pymsix.processing.mean_spectrum``
-    * ``pymsix.processing.peak_picking``
-    * ``pymsix.processing.recalibration``
+    * ``deltamsi.core.msicube``
+    * ``deltamsi.processing.combine_mean_spectra``
+    * ``deltamsi.processing.mean_spectrum``
+    * ``deltamsi.processing.peak_picking``
+    * ``deltamsi.processing.recalibration``
 
 Examples
 --------
->>> from pymsix.params import MeanSpectrumOptions, PeakPickingOptions
+>>> from deltamsi.params import MeanSpectrumOptions, PeakPickingOptions
 >>> # Create a pipeline configuration
 >>> ms_opts = MeanSpectrumOptions(mode="centroid", binning_p=0.001)
 >>> pp_opts = PeakPickingOptions(topn=1000, distance_ppm=10.0)
@@ -99,11 +99,11 @@ class MeanSpectrumOptions:
 
     Examples
     --------
-    >>> from pymsix.params import MeanSpectrumOptions
+    >>> from deltamsi.params import MeanSpectrumOptions
     >>> opts = MeanSpectrumOptions(mode="centroid", binning_p=0.005, mass_accuracy_ppm=5.0)
     >>> opts.validate()
     """
-    __module__ = "pymsix.params"
+    __module__ = "deltamsi.params"
 
     mode: Literal["profile", "centroid"]
     min_mz: float = 0.0
@@ -165,11 +165,11 @@ class GlobalMeanSpectrumOptions:
 
     Examples
     --------
-    >>> from pymsix.params import GlobalMeanSpectrumOptions
+    >>> from deltamsi.params import GlobalMeanSpectrumOptions
     >>> opts = GlobalMeanSpectrumOptions(binning_p=0.0005, tic_normalize=False)
     >>> opts.validate()
     """
-    __module__ = "pymsix.params"
+    __module__ = "deltamsi.params"
 
     binning_p: float = 0.0001
     use_intersection: bool = True
@@ -199,11 +199,11 @@ class PeakPickingOptions:
 
     Examples
     --------
-    >>> from pymsix.params import PeakPickingOptions
+    >>> from deltamsi.params import PeakPickingOptions
     >>> opts = PeakPickingOptions(topn=500, distance_ppm=10.0)
     >>> opts.validate()
     """
-    __module__ = "pymsix.params"
+    __module__ = "deltamsi.params"
 
     topn: int = 10000
     binning_p: float = 1e-4
@@ -254,11 +254,11 @@ class PeakMatrixOptions:
 
     Examples
     --------
-    >>> from pymsix.params import PeakMatrixOptions
+    >>> from deltamsi.params import PeakMatrixOptions
     >>> opts = PeakMatrixOptions(tol_ppm=5.0)
     >>> opts.validate()
     """
-    __module__ = "pymsix.params"
+    __module__ = "deltamsi.params"
 
     tol_da: Optional[float] = None
     tol_ppm: Optional[float] = None
@@ -303,11 +303,11 @@ class RecalibrationOptions:
 
     Examples
     --------
-    >>> from pymsix.params import RecalibrationOptions
+    >>> from deltamsi.params import RecalibrationOptions
     >>> opts = RecalibrationOptions(tol_ppm=20.0, n_peaks=500)
     >>> opts.validate()
     """
-    __module__ = "pymsix.params"
+    __module__ = "deltamsi.params"
 
     # Matching tolerance (one must be provided)
     tol_da: float = 0.03
@@ -396,7 +396,7 @@ class MassClusteringOptions:
 
     Examples
     --------
-    >>> from pymsix.params import MassClusteringOptions
+    >>> from deltamsi.params import MassClusteringOptions
     >>> # Configure colocalization clustering with k-NN pruning
     >>> opts = MassClusteringOptions(
     ...     method="colocalization", 
@@ -405,7 +405,7 @@ class MassClusteringOptions:
     ... )
     >>> opts.validate()
     """
-    __module__ = "pymsix.params"
+    __module__ = "deltamsi.params"
 
     method: Literal["candidates", "colocalization"] = "candidates"
 
@@ -518,12 +518,12 @@ class KendrickPlotOptions:
 
     Examples
     --------
-    >>> from pymsix.params import KendrickPlotOptions
+    >>> from deltamsi.params import KendrickPlotOptions
     >>> # Plot using H2O as base for lipid analysis
     >>> opts = KendrickPlotOptions(base="H2O", point_size=40, annotate=True)
     >>> opts.validate()
     """
-    __module__ = "pymsix.params"
+    __module__ = "deltamsi.params"
 
     base: Union[str, float, Tuple[float, float]] = "CH2"
     mass_col: str = "mz"
@@ -587,7 +587,7 @@ class RecalParams:
         Minimum number of database matches required to attempt a fit.
     """
 
-    __module__ = "pymsix.params"
+    __module__ = "deltamsi.params"
 
     # Matching tolerance (choose one)
     tol_da: float = 0.03  # used if tol_ppm is None
@@ -636,7 +636,7 @@ class CosineColocParams:
         Key used to store the resulting matrix in ``adata.varp``.
     """
 
-    __module__ = "pymsix.params"
+    __module__ = "deltamsi.params"
 
     layer: Optional[str] = None
     dtype: Union[np.dtype, str] = "float32"
@@ -689,7 +689,7 @@ class RankIonsMSIParams:
         Key under which results are stored in ``adata.uns``.
     """
 
-    __module__ = "pymsix.params"
+    __module__ = "deltamsi.params"
 
     condition_key: str = "condition"
     sample_key: str = "sample"

@@ -20,7 +20,7 @@ import pandas as pd
 from scipy import sparse
 
 if TYPE_CHECKING:  # pragma: no cover
-    from pymsix.core.msicube import MSICube
+    from deltamsi.core.msicube import MSICube
 
 Agg = Literal["mean", "median", "max"]
 
@@ -102,7 +102,7 @@ def aggregate_vars_by_label(
 
     Examples
     --------
-    >>> from pymsix.processing.aggregation import aggregate_vars_by_label
+    >>> from deltamsi.processing.aggregation import aggregate_vars_by_label
     >>> # Aggregate ions by their cluster ID to get cluster-specific images
     >>> labels = aggregate_vars_by_label(
     ...     msicube, 

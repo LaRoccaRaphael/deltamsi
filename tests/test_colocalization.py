@@ -4,8 +4,8 @@ import pandas as pd
 from pathlib import Path
 import pytest
 
-from pymsix.core.msicube import MSICube
-from pymsix.processing.colocalization import CosineColocParams, compute_mz_cosine_colocalization
+from deltamsi.core.msicube import MSICube
+from deltamsi.processing.colocalization import CosineColocParams, compute_mz_cosine_colocalization
 
 
 @pytest.fixture

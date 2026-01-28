@@ -10,7 +10,7 @@ import os
 import sys
 sys.path.insert(0, os.path.abspath("../../../src"))
 
-project = 'Pymsix'
+project = 'Deltamsi'
 copyright = '2026, Raphaël La Rocca, Lionel La Rocca'
 author = 'Raphaël La Rocca, Lionel La Rocca'
 
@@ -55,7 +55,7 @@ autodoc_default_options = {
 nitpick_ignore = [
     ('py:class', 'typing.Any'),
     ('py:class', 'Any'),
-    ('py:class', 'pymsix.params.options.MeanSpectrumOptions'),
+    ('py:class', 'deltamsi.params.options.MeanSpectrumOptions'),
 ]
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output

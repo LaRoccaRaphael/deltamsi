@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from typing import Sequence, Optional, Tuple, Iterable, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pymsix.core.msicube import MSICube
+    from deltamsi.core.msicube import MSICube
 
 
 def _plot_mean_spectrum_windows_core(
@@ -204,7 +204,7 @@ def plot_mean_spectrum_windows(
 
     Examples
     --------
-    >>> from pymsix.plotting.spectra import plot_mean_spectrum_windows
+    >>> from deltamsi.plotting.spectra import plot_mean_spectrum_windows
     >>> # Plot windows for 3 specific m/z values across all samples
     >>> plot_mean_spectrum_windows(
     ...     msicube, 

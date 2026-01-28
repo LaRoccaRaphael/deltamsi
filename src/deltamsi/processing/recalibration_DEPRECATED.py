@@ -27,7 +27,7 @@ spectrum is preserved.
 
 Examples
 --------
->>> from pymsix.params.options import RecalibrationOptions
+>>> from deltamsi.params.options import RecalibrationOptions
 >>> options = RecalibrationOptions(tol=0.5, step=0.01, dalim=0.05, npeak=100)
 >>> db_masses = np.array([121.0509, 322.0481, 622.0289, 922.0097])
 >>> success = recalibrate_imzml_file("input.imzML", "output.imzML", db_masses, options)
@@ -42,8 +42,8 @@ from scipy.stats import gaussian_kde
 from typing import Optional, List, Tuple, Any
 
 # Import RecalibrationOptions from the parameters module
-# Assuming pymsix package structure is available in the environment
-from pymsix.params.options import RecalibrationOptions
+# Assuming deltamsi package structure is available in the environment
+from deltamsi.params.options import RecalibrationOptions
 
 # --- Utility Functions ---
 

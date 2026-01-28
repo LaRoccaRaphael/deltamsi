@@ -1,7 +1,7 @@
-pymsix.params package
+deltamsi.params package
 =====================
 
-.. automodule:: pymsix.params
+.. automodule:: deltamsi.params
    :members:
    :show-inheritance:
    :undoc-members:
@@ -9,10 +9,10 @@ pymsix.params package
 Submodules
 ----------
 
-pymsix.params.options module
+deltamsi.params.options module
 ----------------------------
 
-.. automodule:: pymsix.params.options
+.. automodule:: deltamsi.params.options
    :members:
    :show-inheritance:
    :undoc-members:
