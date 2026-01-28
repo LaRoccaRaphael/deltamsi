@@ -287,7 +287,7 @@ def cluster_masses_with_candidates(
     Examples
     --------
     >>> import pandas as pd
-    >>> from pymsix.processing.clustering import cluster_masses_with_candidates
+    >>> from deltamsi.processing.clustering import cluster_masses_with_candidates
     >>> # Catalog of common adducts/isotopic shifts
     >>> catalog = pd.DataFrame({"delta_da": [1.0033, 21.9819], "score": [0.1, 0.2]})
     >>> results = cluster_masses_with_candidates(mass_list, catalog, tol=("ppm", 5.0))
@@ -455,7 +455,7 @@ def cluster_masses_with_candidates(
     except Exception as e:
         raise ImportError(
             "Leiden requires 'python-igraph' and 'leidenalg', which are installed "
-            "with pymsix. Ensure their system dependencies (e.g., igraph shared "
+            "with deltamsi. Ensure their system dependencies (e.g., igraph shared "
             "libraries) are available on your platform."
         ) from e
 
@@ -624,7 +624,7 @@ def cluster_masses_from_colocalization(
     except Exception as e:
         raise ImportError(
             "Leiden requires 'python-igraph' and 'leidenalg', which are installed "
-            "with pymsix. Ensure their system dependencies (e.g., igraph shared "
+            "with deltamsi. Ensure their system dependencies (e.g., igraph shared "
             "libraries) are available on your platform."
         ) from e
 

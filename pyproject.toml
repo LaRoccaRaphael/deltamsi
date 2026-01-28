@@ -1,5 +1,5 @@
 [project]
-name = "pymsix"
+name = "deltamsi"
 version = "0.1.0"
 description = "A Scanpy-like package for High-Resolution Mass Spectrometry Imaging (MSI)."
 authors = [
@@ -64,13 +64,13 @@ dev = [
 ]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/pymsix"]
+include = ["src/deltamsi"]
 
 [tool.hatch.build.targets.wheel]
-include = ["src/pymsix"]
+include = ["src/deltamsi"]
 
 [tool.hatch.build.targets.wheel.sources]
-"src/pymsix" = "pymsix"
+"src/deltamsi" = "deltamsi"
 
 [build-system]
 requires = ["hatchling"]

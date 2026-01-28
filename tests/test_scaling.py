@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from pymsix.core.msicube import MSICube
+from deltamsi.core.msicube import MSICube
 
 
 @pytest.fixture

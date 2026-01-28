@@ -1,7 +1,7 @@
-pymsix.core package
+deltamsi.core package
 ===================
 
-.. automodule:: pymsix.core
+.. automodule:: deltamsi.core
    :members:
    :show-inheritance:
    :undoc-members:
@@ -9,10 +9,10 @@ pymsix.core package
 Submodules
 ----------
 
-pymsix.core.msicube module
+deltamsi.core.msicube module
 --------------------------
 
-.. automodule:: pymsix.core.msicube
+.. automodule:: deltamsi.core.msicube
    :members:
    :show-inheritance:
    :undoc-members:

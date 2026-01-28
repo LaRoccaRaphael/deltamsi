@@ -24,7 +24,7 @@ import pandas as pd
 import scipy.sparse as sp
 from scipy import stats
 
-from pymsix.params.options import RankIonsMSIParams
+from deltamsi.params.options import RankIonsMSIParams
 
 __all__ = ["RankIonsMSIParams", "rank_ions_groups_msi"]
 
@@ -282,8 +282,8 @@ def rank_ions_groups_msi(adata: ad.AnnData, *, params: RankIonsMSIParams) -> pd.
 
     Examples
     --------
-    >>> from pymsix.params import RankIonsMSIParams
-    >>> from pymsix.processing.discriminant import rank_ions_groups_msi
+    >>> from deltamsi.params import RankIonsMSIParams
+    >>> from deltamsi.processing.discriminant import rank_ions_groups_msi
     >>> # Define comparison between Treated and Control
     >>> p = RankIonsMSIParams(
     ...     condition_key="group", 

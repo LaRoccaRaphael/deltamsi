@@ -19,7 +19,7 @@ import scipy.sparse as sp
 from scipy import ndimage
 
 if TYPE_CHECKING:  # pragma: no cover
-    from pymsix.core.msicube import MSICube
+    from deltamsi.core.msicube import MSICube
 
 
 def _get_matrix(msicube: "MSICube", layer: Optional[str]):

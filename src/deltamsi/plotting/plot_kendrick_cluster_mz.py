@@ -22,7 +22,7 @@ from numpy.typing import NDArray
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from pymsix.processing.kendrick import compute_kendrick_varm, default_kendrick_varm_key
+from deltamsi.processing.kendrick import compute_kendrick_varm, default_kendrick_varm_key
 
 logger = logging.getLogger(__name__)
 
@@ -329,7 +329,7 @@ def plot_kendrick_from_clustering(
     Examples
     --------
     >>> import anndata as ad
-    >>> from pymsix.plotting.kendrick import plot_kendrick_from_clustering
+    >>> from deltamsi.plotting.kendrick import plot_kendrick_from_clustering
     >>> # Assuming clustering_res is the output of mass clustering
     >>> fig, ax, df = plot_kendrick_from_clustering(
     ...     masses=my_mass_list,

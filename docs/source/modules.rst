@@ -1,7 +1,7 @@
-pymsix
-======
+deltamsi
+========
 
 .. toctree::
    :maxdepth: 4
 
-   pymsix
+   deltamsi

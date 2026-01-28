@@ -1,4 +1,4 @@
-from pymsix.params.options import RankIonsMSIParams
+from deltamsi.params.options import RankIonsMSIParams
 
 from .preprocessing import (
     msi_cap_hotspots,

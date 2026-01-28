@@ -40,8 +40,8 @@ def mocker(request: Any) -> Any:
     return types.SimpleNamespace(patch=_patch)
 
 # Import the class and parameters to be tested
-from pymsix.core.msicube import MSICube
-from pymsix.params.options import (
+from deltamsi.core.msicube import MSICube
+from deltamsi.params.options import (
     MeanSpectrumOptions,
     PeakPickingOptions,
 )
@@ -85,7 +85,7 @@ def mock_mean_spectrum(mocker: Any) -> Any:
     return_value = (np.arange(100.0, 110.0, 1.0), np.ones(10) * 10.0)
 
     mock_func = mocker.patch(
-        "pymsix.core.msicube.compute_mean_spectrum", return_value=return_value
+        "deltamsi.core.msicube.compute_mean_spectrum", return_value=return_value
     )
     return mock_func
 
@@ -97,7 +97,7 @@ def mock_combine_mean_spectra(mocker: Any) -> Any:
     return_value = (np.array([100.0, 101.0, 102.0]), np.array([15.0, 15.0, 15.0]))
 
     mock_func = mocker.patch(
-        "pymsix.core.msicube.combine_mean_spectra", return_value=return_value
+        "deltamsi.core.msicube.combine_mean_spectra", return_value=return_value
     )
     return mock_func
 
@@ -608,7 +608,7 @@ def test_perform_peak_picking_success_and_storage(
     # 1. Define the mock output for peak_picking
     expected_mzs = np.array([200.0, 350.0, 410.0, 150.0])
     mock_peak_picking = mocker.patch(
-        "pymsix.core.msicube.peak_picking", return_value=expected_mzs
+        "deltamsi.core.msicube.peak_picking", return_value=expected_mzs
     )
 
     # 2. Execute the method
@@ -659,7 +659,7 @@ def test_perform_peak_picking_requires_global_spectrum(
     cube = cube_with_mean_spectra
 
     # adata is initialized, but no 'mean_spectrum_global' key is present
-    mock_peak_picking = mocker.patch("pymsix.core.msicube.peak_picking")
+    mock_peak_picking = mocker.patch("deltamsi.core.msicube.peak_picking")
 
     # We expect the method to return early (no return value check needed, just no error)
     cube.perform_peak_picking(topn=10)
@@ -678,7 +678,7 @@ def test_perform_peak_picking_raises_value_error_on_invalid_options(
     invalid_kwargs = {
         "topn": 0,  # Should fail validation (must be > 0)
     }
-    mock_peak_picking = mocker.patch("pymsix.core.msicube.peak_picking")
+    mock_peak_picking = mocker.patch("deltamsi.core.msicube.peak_picking")
 
     # Since the internal validation might log an error and return None,
     # we assert that the core logic is stopped.
@@ -697,7 +697,7 @@ def test_perform_peak_picking_handles_unknown_kwargs(
     # Setup mock output and peak picking
     expected_mzs = np.array([200.0])
     mock_peak_picking = mocker.patch(
-        "pymsix.core.msicube.peak_picking", return_value=expected_mzs
+        "deltamsi.core.msicube.peak_picking", return_value=expected_mzs
     )
 
     # Pass an unknown argument

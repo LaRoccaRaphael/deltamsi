@@ -2,7 +2,7 @@
 MSICube Framework for Mass Spectrometry Imaging (MSI)
 =====================================================
 
-The `MSICube` class is the central orchestrator for the `pymsix` library. It 
+The `MSICube` class is the central orchestrator for the `deltamsi` library. It 
 combines raw `imzML` data management with the `AnnData` structure to provide 
 a comprehensive analysis environment for spatial metabolomics and proteomics.
 
@@ -49,13 +49,13 @@ from typing import Optional, Dict, Any, List, Literal, Sequence, Tuple, Union
 import matplotlib.pyplot as plt
 from pyimzml.ImzMLParser import ImzMLParser
 
-from pymsix.plotting.ion_images import plot_ion_images
-from pymsix.plotting.spectrum import plot_mean_spectrum_windows
-from pymsix.processing.mean_spectrum import compute_mean_spectrum
-from pymsix.processing.combine_mean_spectra import combine_mean_spectra, Spectrum
-from pymsix.processing.peak_picking import peak_picking, extract_peak_matrix
-from pymsix.processing.aggregation import aggregate_vars_by_label, Agg
-from pymsix.processing.normalization import (
+from deltamsi.plotting.ion_images import plot_ion_images
+from deltamsi.plotting.spectrum import plot_mean_spectrum_windows
+from deltamsi.processing.mean_spectrum import compute_mean_spectrum
+from deltamsi.processing.combine_mean_spectra import combine_mean_spectra, Spectrum
+from deltamsi.processing.peak_picking import peak_picking, extract_peak_matrix
+from deltamsi.processing.aggregation import aggregate_vars_by_label, Agg
+from deltamsi.processing.normalization import (
     HighAction,
     LowAction,
     ScaleMode,
@@ -65,35 +65,35 @@ from pymsix.processing.normalization import (
     scale_ion_images_zscore as scale_ion_images_zscore_processing,
     tic_normalize_msicube,
 )
-from pymsix.processing.colocalization import compute_mz_cosine_colocalization
-from pymsix.processing.spatial_chaos import (
+from deltamsi.processing.colocalization import compute_mz_cosine_colocalization
+from deltamsi.processing.spatial_chaos import (
     compute_spatial_chaos_matrix,
     spatial_chaos_fold_change_from_adata,
 )
 
-from pymsix.processing.recalibration_core import load_database_masses
+from deltamsi.processing.recalibration_core import load_database_masses
 
-from pymsix.processing.recalibration_cli_clean import write_corrected_msi
-from pymsix.processing.recal_visu_clean import diagnostics_for_pixel, select_pixels
+from deltamsi.processing.recalibration_cli_clean import write_corrected_msi
+from deltamsi.processing.recal_visu_clean import diagnostics_for_pixel, select_pixels
 
-from pymsix.processing.mass_clustering import (
+from deltamsi.processing.mass_clustering import (
     cluster_masses_from_colocalization,
     cluster_masses_with_candidates,
 )
-from pymsix.processing.kendrick import compute_kendrick_varm
-from pymsix.processing.mass_neighbors import direct_mass_neighbors
-from pymsix.processing.discriminant_analysis import rank_ions_groups_msi
-from pymsix.processing.preprocessing import (
+from deltamsi.processing.kendrick import compute_kendrick_varm
+from deltamsi.processing.mass_neighbors import direct_mass_neighbors
+from deltamsi.processing.discriminant_analysis import rank_ions_groups_msi
+from deltamsi.processing.preprocessing import (
     msi_cap_hotspots as msi_cap_hotspots_processing,
     msi_median_filter_2d as msi_median_filter_2d_processing,
     msi_threshold_quantile as msi_threshold_quantile_processing,
 )
-from pymsix.processing.mz_matching import (
+from deltamsi.processing.mz_matching import (
     match_mzs_to_var_simple as match_mzs_to_var_simple_processing,
 )
-from pymsix.plotting.plot_kendrick_cluster_mz import plot_kendrick_from_clustering
+from deltamsi.plotting.plot_kendrick_cluster_mz import plot_kendrick_from_clustering
 
-from pymsix.params.options import (
+from deltamsi.params.options import (
     MeanSpectrumOptions,
     GlobalMeanSpectrumOptions,
     PeakPickingOptions,
@@ -686,7 +686,7 @@ class MSICube:
         Cap ion images at a specific quantile to eliminate pixel hotspots.
 
         This is a convenience wrapper around
-        :func:`pymsix.processing.preprocessing.msi_cap_hotspots` that operates
+        :func:`deltamsi.processing.preprocessing.msi_cap_hotspots` that operates
         on ``self.adata``.
         """
 
@@ -713,7 +713,7 @@ class MSICube:
         Threshold ion images at the per-variable quantile ``q``.
 
         This is a convenience wrapper around
-        :func:`pymsix.processing.preprocessing.msi_threshold_quantile` that
+        :func:`deltamsi.processing.preprocessing.msi_threshold_quantile` that
         operates on ``self.adata``.
         """
 
@@ -747,7 +747,7 @@ class MSICube:
         Apply a 2D median filter to each ion image.
 
         This is a convenience wrapper around
-        :func:`pymsix.processing.preprocessing.msi_median_filter_2d` that
+        :func:`deltamsi.processing.preprocessing.msi_median_filter_2d` that
         operates on ``self.adata``.
         """
 
@@ -819,7 +819,7 @@ class MSICube:
 
         **2. Full customization via CosineColocParams**
         
-        >>> from pymsix.params import CosineColocParams
+        >>> from deltamsi.params import CosineColocParams
         >>> # Define specific parameters for a large dataset
         >>> custom_config = CosineColocParams(
         ...     mode="topk_sparse",
@@ -937,7 +937,7 @@ class MSICube:
         Rank ions by differential expression between two MSI groups.
 
         This is a convenience wrapper around
-        :func:`pymsix.processing.discriminant_analysis.rank_ions_groups_msi`
+        :func:`deltamsi.processing.discriminant_analysis.rank_ions_groups_msi`
         that operates on ``self.adata`` and returns the ranked ions table.
 
         Parameters
@@ -2103,7 +2103,7 @@ class MSICube:
         Match query m/z values to ``self.adata.var`` rows.
 
         This is a convenience wrapper around
-        :func:`pymsix.processing.mz_matching.match_mzs_to_var_simple` that
+        :func:`deltamsi.processing.mz_matching.match_mzs_to_var_simple` that
         operates directly on the MSICube instance.
 
         Parameters
@@ -3269,7 +3269,7 @@ class MSICube:
         >>> ui  # Display the widget in the notebook cell
         """
 
-        from pymsix.plotting.kendrick_manual_label import manual_label_vars_from_kendrick
+        from deltamsi.plotting.kendrick_manual_label import manual_label_vars_from_kendrick
 
         return manual_label_vars_from_kendrick(
             self,

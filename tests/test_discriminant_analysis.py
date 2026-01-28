@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import anndata as ad
 
-from pymsix.processing import RankIonsMSIParams, rank_ions_groups_msi
+from deltamsi.processing import RankIonsMSIParams, rank_ions_groups_msi
 
 
 def test_rank_ions_groups_msi_replicated() -> None:

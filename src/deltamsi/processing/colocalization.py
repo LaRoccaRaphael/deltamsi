@@ -20,10 +20,10 @@ from typing import Optional, Tuple, Union, TYPE_CHECKING
 import numpy as np
 import scipy.sparse as sp
 
-from pymsix.params.options import CosineColocParams
+from deltamsi.params.options import CosineColocParams
 
 if TYPE_CHECKING:  # pragma: no cover
-    from pymsix.core.msicube import MSICube
+    from deltamsi.core.msicube import MSICube
 
 
 def _get_X(msicube: "MSICube", layer: Optional[str]) -> Union[np.ndarray, sp.spmatrix]:
@@ -295,8 +295,8 @@ def compute_mz_cosine_colocalization(
 
     Examples
     --------
-    >>> from pymsix.params import CosineColocParams
-    >>> from pymsix.processing.colocalization import compute_mz_cosine_colocalization
+    >>> from deltamsi.params import CosineColocParams
+    >>> from deltamsi.processing.colocalization import compute_mz_cosine_colocalization
     >>> # Standard sparse computation keeping only top 10 neighbors
     >>> params = CosineColocParams(topk=10, min_sim=0.3)
     >>> sim_matrix = compute_mz_cosine_colocalization(msicube, params=params)

@@ -15,7 +15,7 @@ from typing import Optional, Tuple, Any
 import numpy as np
 from scipy.stats import gaussian_kde
 
-from pymsix.params.options import RecalParams
+from deltamsi.params.options import RecalParams
 
 
 def load_database_masses(path: str) -> np.ndarray:

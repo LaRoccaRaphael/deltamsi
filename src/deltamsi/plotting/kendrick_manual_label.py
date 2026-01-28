@@ -8,7 +8,7 @@ Mass Spectrometry Imaging (MSI) variables in the Kendrick mass space.
 It leverages ``Plotly FigureWidgets`` and ``ipywidgets`` to create a tight 
 integration within Jupyter Notebook/Lab environments. Users can visually identify 
 homologous series (e.g., lipid families) using lasso or box selection tools 
-and write metadata directly back to the :class:`~pymsix.core.msicube.MSICube` 
+and write metadata directly back to the :class:`~deltamsi.core.msicube.MSICube` 
 underlying ``AnnData.var`` table.
 
 Main Features
@@ -42,7 +42,7 @@ import ipywidgets as widgets
 
 
 if TYPE_CHECKING:
-    from pymsix.core.msicube import MSICube
+    from deltamsi.core.msicube import MSICube
 
 
 @dataclass
@@ -134,7 +134,7 @@ def manual_label_vars_from_kendrick(
 
     Examples
     --------
-    >>> from pymsix.plotting.kendrick_manual import manual_label_vars_from_kendrick
+    >>> from deltamsi.plotting.kendrick_manual import manual_label_vars_from_kendrick
     >>> # Assuming msicube is already loaded and compute_kendrick_varm has been run
     >>> ui, state = manual_label_vars_from_kendrick(
     ...     msicube, 
@@ -264,7 +264,7 @@ def manual_label_vars_from_kendrick(
     except ImportError as e:  # pragma: no cover - optional dependency import guard
         raise ImportError(
             "manual_label_vars_from_kendrick requires the optional 'anywidget' dependency. "
-            "Install it directly with `pip install anywidget` or via the `pymsix[viz]` extras."
+            "Install it directly with `pip install anywidget` or via the `deltamsi[viz]` extras."
         ) from e
 
     try:

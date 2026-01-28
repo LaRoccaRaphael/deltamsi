@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 if TYPE_CHECKING:  # pragma: no cover
-    from pymsix.core.msicube import MSICube
+    from deltamsi.core.msicube import MSICube
 
 
 def match_mzs_to_var_simple(
