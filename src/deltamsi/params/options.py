@@ -393,6 +393,9 @@ class MassClusteringOptions:
         Minimum similarity threshold for creating an edge in colocalization mode.
     return_graph : bool, default False
         If True, the underlying NetworkX/igraph object is returned with the results.
+    seed : int, optional
+        Random seed forwarded to Leiden community detection for reproducible
+        partition initialization.
 
     Examples
     --------
@@ -435,6 +438,7 @@ class MassClusteringOptions:
 
     # Output options
     return_graph: bool = False
+    seed: Optional[int] = 0
 
     def validate(self) -> None:
         if self.method not in {"candidates", "colocalization"}:
@@ -455,6 +459,8 @@ class MassClusteringOptions:
             self.output_col = "mass_cluster"
         if not self.output_col:
             raise ValueError("output_col must be a non-empty string.")
+        if self.seed is not None and self.seed < 0:
+            raise ValueError("seed must be >= 0 or None.")
 
     def get_tol_param(self) -> Union[float, Tuple[str, float]]:
         """Returns the format expected by the 'tol' argument."""

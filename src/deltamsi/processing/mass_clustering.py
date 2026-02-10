@@ -237,6 +237,7 @@ def cluster_masses_with_candidates(
     return_graph: bool = False,  # if True, return igraph object as well
     knn_k: Optional[int] = None,  # e.g., 15 to enable k-NN pruning
     knn_mode: str = "union",  # "union" or "mutual"
+    seed: Optional[int] = 0,
 ) -> dict[str, object]:
     """
     Cluster masses by matching experimental m/z differences to a chemical catalog.
@@ -267,6 +268,8 @@ def cluster_masses_with_candidates(
         edges per node.
     return_graph : bool, default False
         Whether to include the `igraph.Graph` object in the output.
+    seed : int, optional
+        Random seed passed to Leiden for deterministic partitioning when possible.
 
     Returns
     -------
@@ -469,6 +472,7 @@ def cluster_masses_with_candidates(
         la.RBConfigurationVertexPartition,
         weights="weight",
         resolution_parameter=float(resolution),
+        seed=seed,
     )
     labels = np.array(part.membership, dtype=int)
 
@@ -499,6 +503,7 @@ def cluster_masses_from_colocalization(
     knn_k: Optional[int] = None,
     knn_mode: str = "union",
     return_graph: bool = False,
+    seed: Optional[int] = 0,
 ) -> dict[str, object]:
     """
     Cluster ions based on spatial colocalization similarity.
@@ -519,6 +524,8 @@ def cluster_masses_from_colocalization(
         Leiden resolution parameter for community detection.
     knn_k : int, optional
         Retain only the top-k most similar spatial neighbors for each ion.
+    seed : int, optional
+        Random seed passed to Leiden for deterministic partitioning when possible.
 
     Returns
     -------
@@ -638,6 +645,7 @@ def cluster_masses_from_colocalization(
         la.RBConfigurationVertexPartition,
         weights="weight",
         resolution_parameter=float(resolution),
+        seed=seed,
     )
     labels = np.array(part.membership, dtype=int)
     labels = _singletons_to_minus1(labels)
