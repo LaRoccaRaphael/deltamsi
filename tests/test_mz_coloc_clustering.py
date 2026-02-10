@@ -49,3 +49,26 @@ def test_coloc_clustering_knn_pruning():
     # Leiden should still keep the graph connected
     labels = res["labels"]
     assert len(np.unique(labels)) == 1
+
+
+def test_coloc_clustering_accepts_seed_argument():
+    S = np.array(
+        [
+            [0.0, 0.9, 0.1, 0.0],
+            [0.9, 0.0, 0.1, 0.0],
+            [0.1, 0.1, 0.0, 0.8],
+            [0.0, 0.0, 0.8, 0.0],
+        ],
+        dtype=float,
+    )
+
+    res = cluster_masses_from_colocalization(
+        S,
+        resolution=1.0,
+        edge_max_delta_cosine=0.5,
+        return_graph=False,
+        seed=123,
+    )
+
+    labels = res["labels"]
+    assert set(np.unique(labels)) == {0, 1}

@@ -2981,6 +2981,7 @@ class MSICube:
                 knn_k=opts.knn_k,
                 knn_mode=opts.knn_mode,
                 return_graph=opts.return_graph,
+                seed=opts.seed,
             )
         else:
             if candidates_df is None:
@@ -3000,6 +3001,7 @@ class MSICube:
                 knn_k=opts.knn_k,
                 knn_mode=opts.knn_mode,
                 return_graph=opts.return_graph,
+                seed=opts.seed,
             )
 
         self.adata.var[opts.output_col] = res["labels"]
