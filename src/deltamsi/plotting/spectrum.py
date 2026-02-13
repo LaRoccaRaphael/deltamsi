@@ -204,7 +204,7 @@ def plot_mean_spectrum_windows(
 
     Examples
     --------
-    >>> from deltamsi.plotting.spectra import plot_mean_spectrum_windows
+    >>> from deltamsi.plotting.spectrum import plot_mean_spectrum_windows
     >>> # Plot windows for 3 specific m/z values across all samples
     >>> plot_mean_spectrum_windows(
     ...     msicube, 

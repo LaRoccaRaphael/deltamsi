@@ -290,7 +290,7 @@ def cluster_masses_with_candidates(
     Examples
     --------
     >>> import pandas as pd
-    >>> from deltamsi.processing.clustering import cluster_masses_with_candidates
+    >>> from deltamsi.processing.mass_clustering import cluster_masses_with_candidates
     >>> # Catalog of common adducts/isotopic shifts
     >>> catalog = pd.DataFrame({"delta_da": [1.0033, 21.9819], "score": [0.1, 0.2]})
     >>> results = cluster_masses_with_candidates(mass_list, catalog, tol=("ppm", 5.0))

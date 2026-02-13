@@ -283,7 +283,7 @@ def rank_ions_groups_msi(adata: ad.AnnData, *, params: RankIonsMSIParams) -> pd.
     Examples
     --------
     >>> from deltamsi.params import RankIonsMSIParams
-    >>> from deltamsi.processing.discriminant import rank_ions_groups_msi
+    >>> from deltamsi.processing.discriminant_analysis import rank_ions_groups_msi
     >>> # Define comparison between Treated and Control
     >>> p = RankIonsMSIParams(
     ...     condition_key="group", 

@@ -190,7 +190,7 @@ def compute_mean_spectrum(
     Examples
     --------
     >>> from deltamsi.params.options import MeanSpectrumOptions
-    >>> from deltamsi.processing.spectra import compute_mean_spectrum
+    >>> from deltamsi.processing.mean_spectrum import compute_mean_spectrum
     >>> 
     >>> opts = MeanSpectrumOptions(min_mz=100, max_mz=1000, binning_p=0.001)
     >>> mz, intensities = compute_mean_spectrum("sample.imzML", options=opts)
