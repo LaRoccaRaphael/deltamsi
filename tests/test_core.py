@@ -44,6 +44,7 @@ from deltamsi.core.msicube import MSICube
 from deltamsi.params.options import (
     MeanSpectrumOptions,
     PeakPickingOptions,
+    RecalibrationOptions,
 )
 
 # ----------------------------------------------------------------------
@@ -718,3 +719,37 @@ def test_perform_peak_picking_handles_unknown_kwargs(
     # The key 'unknown_param' must not exist in the options object
     with pytest.raises(AttributeError):
         _ = options_obj.u
+
+
+def test_plot_recalibration_uses_plot_diagnostics(mocker: Any) -> None:
+    cube = MSICube(data_directory=".")
+    cube.org_imzml_path_dict = {"sample": "dummy.imzML"}
+
+    class DummyParser:
+        coordinates = [(1, 2, 1)]
+
+    dummy_fig = mock.MagicMock()
+
+    mocker.patch("deltamsi.core.msicube.ImzMLParser", return_value=DummyParser())
+    mocker.patch(
+        "deltamsi.core.msicube.load_database_masses", return_value=np.array([100.0])
+    )
+    mocker.patch("deltamsi.core.msicube.select_pixels", return_value=[0])
+    mocker.patch(
+        "deltamsi.core.msicube.diagnostics_for_pixel", return_value={"idx": 0}
+    )
+    plot_diag = mocker.patch(
+        "deltamsi.core.msicube.plot_diagnostics", return_value=dummy_fig
+    )
+    show_mock = mocker.patch("matplotlib.pyplot.show")
+
+    cube.plot_recalibration(
+        sample_name="sample",
+        database_mass_file="db.csv",
+        options=RecalibrationOptions(tol_da=0.01, n_peaks=15),
+        pixel_idx=[0],
+    )
+
+    plot_diag.assert_called_once()
+    dummy_fig.suptitle.assert_called_once()
+    show_mock.assert_called_once()

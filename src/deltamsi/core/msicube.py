@@ -74,7 +74,11 @@ from deltamsi.processing.spatial_chaos import (
 from deltamsi.processing.recalibration_core import load_database_masses
 
 from deltamsi.processing.recalibration_cli_clean import write_corrected_msi
-from deltamsi.processing.recal_visu_clean import diagnostics_for_pixel, select_pixels
+from deltamsi.processing.recal_visu_clean import (
+    diagnostics_for_pixel,
+    plot_diagnostics,
+    select_pixels,
+)
 
 from deltamsi.processing.mass_clustering import (
     cluster_masses_from_colocalization,
@@ -2843,8 +2847,8 @@ class MSICube:
 
             # 2. Création et affichage des figures
             for idx in pixels_to_plot:
-                # diagnostics_for_pixel retourne une figure
-                fig = diagnostics_for_pixel(p, idx, db, params)
+                diag = diagnostics_for_pixel(p, idx, db, params)
+                fig = plot_diagnostics(diag, params)
                 fig.suptitle(
                     f"Sample: {sample_name} | Pixel Index: {idx} | Coordinates: {p.coordinates[idx]}",
                     fontsize=16,
