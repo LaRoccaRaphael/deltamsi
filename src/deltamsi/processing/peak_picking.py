@@ -271,7 +271,7 @@ def extract_peak_matrix(
 
     Examples
     --------
-    >>> from deltamsi.processing.peaks import extract_peak_matrix
+    >>> from deltamsi.processing.peak_picking import extract_peak_matrix
     >>> # Extract 500 features with 5 ppm tolerance
     >>> opts = PeakMatrixOptions(tol_ppm=5.0)
     >>> X, coords = extract_peak_matrix("data.imzML", picked_mzs, opts)

@@ -329,7 +329,7 @@ def plot_kendrick_from_clustering(
     Examples
     --------
     >>> import anndata as ad
-    >>> from deltamsi.plotting.kendrick import plot_kendrick_from_clustering
+    >>> from deltamsi.plotting.plot_kendrick_cluster_mz import plot_kendrick_from_clustering
     >>> # Assuming clustering_res is the output of mass clustering
     >>> fig, ax, df = plot_kendrick_from_clustering(
     ...     masses=my_mass_list,

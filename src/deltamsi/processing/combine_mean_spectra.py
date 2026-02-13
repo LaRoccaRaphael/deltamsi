@@ -78,7 +78,7 @@ def combine_mean_spectra(
     Examples
     --------
     >>> from deltamsi.params.options import GlobalMeanSpectrumOptions
-    >>> from deltamsi.processing.spectra import combine_mean_spectra
+    >>> from deltamsi.processing.combine_mean_spectra import combine_mean_spectra
     >>> 
     >>> # Configure averaging options
     >>> opts = GlobalMeanSpectrumOptions(binning_p=0.0001, tic_normalize=True)

@@ -134,7 +134,7 @@ def manual_label_vars_from_kendrick(
 
     Examples
     --------
-    >>> from deltamsi.plotting.kendrick_manual import manual_label_vars_from_kendrick
+    >>> from deltamsi.plotting.kendrick_manual_label import manual_label_vars_from_kendrick
     >>> # Assuming msicube is already loaded and compute_kendrick_varm has been run
     >>> ui, state = manual_label_vars_from_kendrick(
     ...     msicube, 
