@@ -2608,7 +2608,9 @@ class MSICube:
         --------
         **1. Recalibrate using a standard metabolite database**
 
-        >>> from msicube import RecalibrationOptions
+        >>> import deltamsi
+        >>> from deltamsi.core.msicube import MSICube
+        >>> from deltamsi.params.options import RecalibrationOptions
         >>> my_options = RecalibrationOptions(
         ...     tol_da=0.01, 
         ...     n_peaks=20
@@ -2793,7 +2795,9 @@ class MSICube:
         --------
         **1. Inspecting specific coordinates for quality control**
 
-        >>> from msicube import RecalibrationOptions
+        >>> import deltamsi
+        >>> from deltamsi.core.msicube import MSICube
+        >>> from deltamsi.params.options import RecalibrationOptions
         >>> options = RecalibrationOptions(tol_da=0.01, n_peaks=15)
         >>> cube.plot_recalibration(
         ...     sample_name="Sample_01",
@@ -2944,7 +2948,9 @@ class MSICube:
 
         **2. Cluster based on spatial colocalization**
         
-        >>> from msicube import MassClusteringOptions
+        >>> import deltamsi
+        >>> from deltamsi.core.msicube import MSICube
+        >>> from deltamsi.params.options import MassClusteringOptions
         >>> opts = MassClusteringOptions(method="colocalization", resolution=0.8)
         >>> cube.cluster_masses(options=opts)
         """
@@ -3362,7 +3368,9 @@ class MSICube:
 
         **2. High-resolution view using H2O base and two panels**
 
-        >>> from msicube import KendrickPlotOptions
+        >>> import deltamsi
+        >>> from deltamsi.core.msicube import MSICube
+        >>> from deltamsi.params.options import KendrickPlotOptions
         >>> opts = KendrickPlotOptions(base="H2O", two_panels=True, annotate=True)
         >>> cube.plot_kendrick(options=opts)
         """
