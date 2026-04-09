@@ -123,6 +123,19 @@ src/deltamsi/
 └── utils/          # Validation helpers
 ```
 
+## How to cite
+
+If you use `deltamsi` in your research, please cite:
+
+```bibtex
+@software{deltamsi,
+  author  = {La Rocca, Raphaël},
+  title   = {deltamsi: A Scanpy-like Python package for High-Resolution Mass Spectrometry Imaging analysis},
+  year    = {2026},
+  url     = {https://github.com/LaRoccaRaphael/deltamsi},
+}
+```
+
 ## License
 
 BSD 3-Clause - see [LICENSE](LICENSE).
