@@ -25,7 +25,7 @@ A Scanpy-like Python package for High-Resolution Mass Spectrometry Imaging (MSI)
 ### Clone and set up the environment
 
 ```bash
-git clone https://github.com/your-org/deltamsi.git
+git clone https://github.com/LaRoccaRaphael/deltamsi.git
 cd deltamsi
 uv sync
 ```
