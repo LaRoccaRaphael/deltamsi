@@ -97,7 +97,16 @@ dm.plot_mean_spectrum_windows(cube.adata)
 cube.save()                        # saves to ./data/my_experiment/adata.h5ad
 cube.save(file_format="zarr")      # or zarr for large datasets
 ```
+## Example notebooks
 
+The example notebooks directory contains worked examples illustrating how `deltamsi` can be applied to different real MSI datasets. Together, these notebooks showcase complementary use cases of the package, including recalibration, differential analysis, fold-change-based ion ranking, and graph-based molecular interpretation.
+
+- `deltamsi_recalibration.ipynb` demonstrates the recalibration workflow implemented in `deltamsi`, based on the method described in [DOI: 10.1021/acs.analchem.0c05071](https://doi.org/10.1021/acs.analchem.0c05071). The notebook applies this strategy to zebrafish MSI data available from the [METASPACE project page](https://metaspace2020.org/project/rocca-2021?tab=datasets).
+
+- `deltamsi_microbacterial_colonies.ipynb` presents a graph-based mass-difference clustering workflow to identify molecular families produced by *Pseudomonas sessilinigenes* CMR12a32 bacterial colonies grown on agar. The corresponding dataset is available in [METASPACE](https://metaspace2020.org/project/rocca-2025?tab=datasets), and the associated study is described in [DOI: 10.1021/jasms.5c00055](https://doi.org/10.1021/jasms.5c00055).
+
+- `deltamsi_DA.ipynb` reproduces the ISF workflow introduced in [DOI: 10.1021/jasms.4c00129](https://doi.org/10.1021/jasms.4c00129) to investigate how iron availability regulates metabolism in *S. scabiei*, with a particular focus on siderophore production under iron-depleted conditions. It also shows how graph-based mass-difference clustering can be applied to condition-specific ions and how `deltamsi` can rank ions based on fold change between conditions. The dataset used in this notebook is available in [METASPACE](https://metaspace2020.org/project/Burguet-2026?tab=datasets).
+- 
 ## Running tests
 
 ```bash
