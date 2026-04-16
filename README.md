@@ -1,8 +1,8 @@
 # deltamsi
 
-A Scanpy-like Python package for High-Resolution Mass Spectrometry Imaging (MSI) analysis.
+This repository contains a python package for High-Resolution Mass Spectrometry Imaging (MSI) analysis.
 
-`deltamsi` provides a unified analysis framework for spatial metabolomics and proteomics built on top of [AnnData](https://anndata.readthedocs.io/). The central `MSICube` object handles everything from loading raw `.imzML` files to preprocessing, peak picking, spatial analysis, and visualization.
+Developed during the PhD thesis *"High-Resolution Mass Spectrometry Imaging: From Mass-Shift Correction to Graph-Based Molecular Interpretation"* by Raphaël La Rocca, `deltamsi` provides a unified analysis framework for spatial metabolomics and lipidomics built on top of [AnnData](https://anndata.readthedocs.io/). The central `MSICube` object handles everything from loading raw `.imzML` files to preprocessing, peak picking, spatial analysis, and visualization.
 
 <p align="center"><img src="Overview_deltamsi.png" width="680"></p>
 
