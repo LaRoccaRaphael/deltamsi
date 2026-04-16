@@ -119,6 +119,12 @@ With coverage:
 uv run pytest --cov=src/deltamsi
 ```
 
+## Documentation
+
+Comprehensive documentation for `deltamsi` is available at [https://laroccaraphael.github.io/deltamsi/](https://laroccaraphael.github.io/deltamsi/).
+
+The documentation provides detailed descriptions of package functions and API reference material for the main analysis workflows.
+
 ## Building documentation
 
 ```bash
